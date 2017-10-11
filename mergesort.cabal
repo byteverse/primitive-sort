@@ -1,0 +1,81 @@
+name: mergesort
+version: 0.1
+synopsis: Parallel Mergesort
+description: Parallel Mergesort
+homepage: https://github.com/andrewthad/mergesort
+license: BSD3
+license-file: LICENSE
+author: Andrew Martin
+maintainer: andrew.thaddeus@gmail.com
+copyright: 2017 Andrew Martin
+category: software
+build-type: Simple
+extra-source-files: README.md
+cabal-version: >=1.25
+
+library
+  hs-source-dirs: src
+  mixins:
+      indef (Sort.Merge.Indef as Sort.Merge.Int8.Internal)
+        requires (Element as Element.Int8)
+    , indef (Sort.Merge.Indef as Sort.Merge.Word16.Internal)
+        requires (Element as Element.Word16)
+    , indef (Sort.Merge.Indef as Sort.Merge.Word.Internal)
+        requires (Element as Element.Word)
+  exposed-modules:
+      Sort.Merge.Int8
+    , Sort.Merge.Word16
+    , Sort.Merge.Word
+  build-depends: base, primitive, indef, impls
+  default-language: Haskell2010
+
+library impls
+  build-depends: base, ghc-prim, primitive
+  exposed-modules:
+      Element.Int8
+    , Element.Word16
+    , Element.Word
+  hs-source-dirs: element
+  default-language: Haskell2010
+
+library indef
+  build-depends: base, ghc-prim, primitive, vector
+  signatures: Element
+  exposed-modules: Sort.Merge.Indef
+  hs-source-dirs: indef
+  default-language: Haskell2010
+
+test-suite test
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  build-depends:
+      base
+    , mergesort
+    , tasty
+    , tasty-hunit
+    , tasty-smallcheck
+    , tasty-quickcheck
+    , primitive
+    , smallcheck
+    , QuickCheck
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  default-language: Haskell2010
+
+benchmark bench
+  type: exitcode-stdio-1.0
+  build-depends:
+      base
+    , mergesort
+    , criterion
+    , random
+    , primitive
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  default-language: Haskell2010
+  hs-source-dirs: bench
+  main-is: Main.hs
+
+source-repository head
+  type: git
+  location: https://github.com/andrewthad/mergesort
+

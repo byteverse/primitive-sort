@@ -1,0 +1,37 @@
+signature Element where
+
+import Data.Primitive (ByteArray,MutableByteArray)
+import Control.Monad.ST (ST)
+
+data T
+
+gt :: T -> T -> Bool
+lt :: T -> T -> Bool
+gte :: T -> T -> Bool
+lte :: T -> T -> Bool
+eq :: T -> T -> Bool
+
+size :: Int
+
+indexByteArray :: ByteArray -> Int -> T
+readByteArray :: MutableByteArray s -> Int -> ST s T
+writeByteArray :: MutableByteArray s -> Int -> T -> ST s ()
+newByteArray :: Int -> ST s (MutableByteArray s)
+sizeofByteArray :: ByteArray -> Int
+getSizeofMutableByteArray :: MutableByteArray s -> ST s Int
+copyByteArray :: 
+     MutableByteArray s -- ^ destination array
+  -> Int -- ^ offset into destination array
+  -> ByteArray -- ^ source array
+  -> Int -- ^ offset into source array
+  -> Int -- ^ number of bytes to copy
+  -> ST s ()
+
+copyMutableByteArray ::
+     MutableByteArray s -- ^ destination array
+  -> Int -- ^ offset into destination array
+  -> MutableByteArray s -- ^ source array
+  -> Int -- ^ offset into source array
+  -> Int -- ^ number of bytes to copy
+  -> ST s ()
+
