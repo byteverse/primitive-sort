@@ -26,7 +26,8 @@ library
       Sort.Merge.Int8
     , Sort.Merge.Word16
     , Sort.Merge.Word
-  build-depends: base, primitive, indef, impls
+    , Sort.Merge
+  build-depends: base, primitive, indef, impls, vector, ghc-prim
   default-language: Haskell2010
 
 library impls
