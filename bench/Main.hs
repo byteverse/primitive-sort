@@ -13,12 +13,19 @@ import qualified GHC.OldList as L
 import qualified Sort.Merge.Int8
 import qualified Sort.Merge.Word16
 import qualified Sort.Merge.Word
+import qualified Sort.Merge
 import qualified Data.Primitive as P
 
 main :: IO ()
 main = defaultMain
-  [ benchType (typeRep :: TypeRep Int8) Sort.Merge.Int8.sort
-  , benchType (typeRep :: TypeRep Word) Sort.Merge.Word.sort
+  [ bgroup "backpack"
+    [ benchType (typeRep :: TypeRep Int8) Sort.Merge.Int8.sort
+    , benchType (typeRep :: TypeRep Word) Sort.Merge.Word.sort
+    ]
+  , bgroup "specialize"
+    [ benchType (typeRep :: TypeRep Int8) Sort.Merge.sortInt8
+    , benchType (typeRep :: TypeRep Word) Sort.Merge.sortWord
+    ]
   ]
 
 data Size = Small | Medium | Large
