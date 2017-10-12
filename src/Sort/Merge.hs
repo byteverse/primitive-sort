@@ -8,9 +8,21 @@
 {-# OPTIONS_GHC -O2 -Wall #-}
 
 module Sort.Merge
-  ( sortWord
+  ( -- * Sorting
+    sortWord
+  , sortWord8
   , sortWord16
+  , sortWord32
+  , sortWord64
+  , sortInt
   , sortInt8
+  , sortInt16
+  , sortInt32
+  , sortInt64
+    -- * Tagged Sorting
+  , sortWordWord
+  , sortWord8Word
+  , sortWord16Word32
   ) where
 
 import Control.Monad.ST
@@ -30,11 +42,45 @@ import qualified Data.Vector as V
 sortWord :: ByteArray -> ByteArray
 sortWord arr = sort (proxy# :: Proxy# Word) arr
 
+sortWord8 :: ByteArray -> ByteArray
+sortWord8 arr = sort (proxy# :: Proxy# Word8) arr
+
 sortWord16 :: ByteArray -> ByteArray
 sortWord16 arr = sort (proxy# :: Proxy# Word16) arr
 
+sortWord32 :: ByteArray -> ByteArray
+sortWord32 arr = sort (proxy# :: Proxy# Word32) arr
+
+sortWord64 :: ByteArray -> ByteArray
+sortWord64 arr = sort (proxy# :: Proxy# Word64) arr
+
+sortInt :: ByteArray -> ByteArray
+sortInt arr = sort (proxy# :: Proxy# Int) arr
+
 sortInt8 :: ByteArray -> ByteArray
 sortInt8 arr = sort (proxy# :: Proxy# Int8) arr
+
+sortInt16 :: ByteArray -> ByteArray
+sortInt16 arr = sort (proxy# :: Proxy# Int16) arr
+
+sortInt32 :: ByteArray -> ByteArray
+sortInt32 arr = sort (proxy# :: Proxy# Int32) arr
+
+sortInt64 :: ByteArray -> ByteArray
+sortInt64 arr = sort (proxy# :: Proxy# Int64) arr
+
+-- The first type name is the element type. The second one is
+-- the tag type.
+
+sortWordWord :: ByteArray -> ByteArray -> (ByteArray,ByteArray)
+sortWordWord arr tags = sortTagged (proxy# :: Proxy# Word) (proxy# :: Proxy# Word) arr tags
+
+sortWord8Word:: ByteArray -> ByteArray -> (ByteArray,ByteArray)
+sortWord8Word arr tags = sortTagged (proxy# :: Proxy# Word8) (proxy# :: Proxy# Word) arr tags
+
+sortWord16Word32:: ByteArray -> ByteArray -> (ByteArray,ByteArray)
+sortWord16Word32 arr tags = sortTagged (proxy# :: Proxy# Word16) (proxy# :: Proxy# Word32) arr tags
+
 
 sort :: forall a. (Ord a, Prim a) => Proxy# a -> ByteArray -> ByteArray
 sort !_ !src = runST $ do
@@ -54,6 +100,36 @@ sort !_ !src = runST $ do
   -- when we actually have more than one capability.
   splitMergeParallel (proxy# :: Proxy# a) dst work threads 0 len
   unsafeFreezeByteArray dst
+
+-- | Admits an additional array of tags. This array must be the
+--   same length as the source array. The second element of the
+--   result tuple is this tag array, sorted to match the sorted
+--   element array.
+sortTagged :: forall n a. (Ord a, Prim a, Prim n)
+  => Proxy# a
+  -> Proxy# n
+  -> ByteArray -- source
+  -> ByteArray -- source tags
+  -> (ByteArray, ByteArray)
+sortTagged !_ !_ !src !srcTags = runST $ do
+  let len = sizeofByteArray (proxy# :: Proxy# a) src
+  dst <- newByteArray (proxy# :: Proxy# a) len
+  work <- newByteArray (proxy# :: Proxy# a) len
+  dstTags <- newByteArray (proxy# :: Proxy# n) len
+  workTags <- newByteArray (proxy# :: Proxy# n) len
+  copyByteArray (proxy# :: Proxy# a) work 0 src 0 len 
+  copyByteArray (proxy# :: Proxy# a) dst 0 src 0 len
+  copyByteArray (proxy# :: Proxy# n) workTags 0 srcTags 0 len 
+  copyByteArray (proxy# :: Proxy# n) dstTags 0 srcTags 0 len
+  caps <- unsafeEmbedIO getNumCapabilities
+  let minElemsPerThread = 20000
+      maxThreads = div len minElemsPerThread
+      preThreads = min caps maxThreads
+      threads = if preThreads == 1 then 1 else preThreads * 8
+  splitMergeParallelTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) dst work dstTags workTags threads 0 len
+  dstFrozen <- unsafeFreezeByteArray dst
+  dstTagsFrozen <- unsafeFreezeByteArray dstTags
+  return (dstFrozen,dstTagsFrozen)
 
 unsafeEmbedIO :: IO a -> ST s a
 unsafeEmbedIO (IO f) = ST (unsafeCoerce# f)
@@ -79,14 +155,58 @@ splitMergeParallel !_ !arr !work !level !start !end = if level > 1
         (splitMergeParallel (proxy# :: Proxy# a) work arr levelDown start mid)
         (splitMergeParallel (proxy# :: Proxy# a) work arr levelDown mid end)
       mergeParallel (proxy# :: Proxy# a) work arr level start mid end
-      -- merge work arr start mid end
   else splitMerge (proxy# :: Proxy# a) arr work start end
+
+splitMergeParallelTagged :: forall s n a. (Ord a, Prim a, Prim n)
+  => Proxy# a
+  -> Proxy# n
+  -> MutableByteArray s -- source and destination
+  -> MutableByteArray s -- work array
+  -> MutableByteArray s -- source and destination tags
+  -> MutableByteArray s -- work array tags
+  -> Int -- spark limit, should be power of two
+  -> Int -- start
+  -> Int -- end
+  -> ST s ()
+splitMergeParallelTagged !_ !_ !arr !work !arrTags !workTags !level !start !end = if level > 1
+  then -- if end - start < threshold
+    -- then insertionSortRange (proxy# :: Proxy# a) arr start end
+    -- else 
+    do
+      let !mid = div (end + start) 2
+          !levelDown = half level
+      tandem 
+        (splitMergeParallelTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) work arr workTags arrTags levelDown start mid)
+        (splitMergeParallelTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) work arr workTags arrTags levelDown mid end)
+      mergeParallelTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) work arr workTags arrTags level start mid end
+  else splitMergeTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) arr work arrTags workTags start end
 
 replicateIxed :: Monad m => Int -> (Int -> m a) -> m ()
 replicateIxed !n f = go (n - 1) where
   go !ix = if ix >= 0
     then f ix >> go (ix - 1)
     else return ()
+
+splitMergeTagged :: forall s n a. (Ord a, Prim a, Prim n)
+  => Proxy# a
+  -> Proxy# n
+  -> MutableByteArray s -- source and destination
+  -> MutableByteArray s -- work array
+  -> MutableByteArray s -- source and destination tags
+  -> MutableByteArray s -- work array tags
+  -> Int -- start
+  -> Int -- end
+  -> ST s ()
+splitMergeTagged !_ !_ !arr !work !arrTags !workTags !start !end = if end - start < 2
+  then return ()
+  else do
+    -- if end - start > threshold
+      -- then do
+        let !mid = div (end + start) 2
+        splitMergeTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) work arr workTags arrTags start mid
+        splitMergeTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) work arr workTags arrTags mid end
+        mergeTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) work arr workTags arrTags start mid end
+      -- else insertionSortRange (proxy# :: Proxy# a) arr start end
 
 splitMerge :: forall s a. (Ord a, Prim a)
   => Proxy# a
@@ -129,31 +249,59 @@ mergeParallel :: forall s a. (Ord a, Prim a)
   -> Int -- end
   -> ST s ()
 mergeParallel !_ !src !dst !threads !start !mid !end = do
-  v <- V.unfoldrNM threads (\x -> case x of
-      BuildBegin -> do
-        !endElem <- readByteArray src (start + chunk) 
-        !endA <- findIndexOfGtElem src (endElem :: a) start mid
-        !endB <- findIndexOfGtElem src endElem mid end
-        return (Just (Indices start endA mid endB,BuildStep endA endB 1))
-      BuildStep prevEndA prevEndB ix ->
-        if | prevEndA == mid && prevEndB == end -> return Nothing
-           | prevEndA == mid ->
-               return (Just (Indices mid mid prevEndB end,BuildStep mid end (ix + 1)))
-           | prevEndB == end ->
-               return (Just (Indices prevEndA mid end end,BuildStep mid end (ix + 1)))
-           | otherwise -> if ix == threads - 1
-               then return (Just (Indices prevEndA mid prevEndB end, BuildStep mid end (ix + 1)))
-               else do
-                 -- We use the left half for this lookup. We could instead
-                 -- use both halves and take the median.
-                 !endElem <- readByteArray src (start + chunk * (ix + 1))
-                 !endA <- findIndexOfGtElem src (endElem :: a) prevEndA mid
-                 !endB <- findIndexOfGtElem src endElem prevEndB end
-                 return (Just (Indices prevEndA endA prevEndB endB, BuildStep endA endB (ix + 1)))
-    ) BuildBegin
+  v <- createIndicesVector (proxy# :: Proxy# a) src threads start mid end
   forConcurrently_ v $ \(Indices startA endA startB endB) -> do
     let !startDst = (startA - start) + (startB - mid) + start
     mergeNonContiguous (proxy# :: Proxy# a) src dst startA endA startB endB startDst
+
+mergeParallelTagged :: forall s n a. (Ord a, Prim a, Prim n)
+  => Proxy# a
+  -> Proxy# n
+  -> MutableByteArray s -- source
+  -> MutableByteArray s -- dest
+  -> MutableByteArray s -- source tags
+  -> MutableByteArray s -- dest tags
+  -> Int -- threads
+  -> Int -- start
+  -> Int -- middle
+  -> Int -- end
+  -> ST s ()
+mergeParallelTagged !_ !_ !src !dst !srcTags !dstTags !threads !start !mid !end = do
+  v <- createIndicesVector (proxy# :: Proxy# a) src threads start mid end
+  forConcurrently_ v $ \(Indices startA endA startB endB) -> do
+    let !startDst = (startA - start) + (startB - mid) + start
+    mergeNonContiguousTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) src dst srcTags dstTags startA endA startB endB startDst
+
+createIndicesVector :: forall s a. (Ord a, Prim a)
+  => Proxy# a
+  -> MutableByteArray s -- source
+  -> Int -- threads
+  -> Int -- start
+  -> Int -- middle
+  -> Int -- end
+  -> ST s (V.Vector Indices)
+createIndicesVector !_ !src !threads !start !mid !end = V.unfoldrNM threads (\x -> case x of
+    BuildBegin -> do
+      !endElem <- readByteArray src (start + chunk) 
+      !endA <- findIndexOfGtElem src (endElem :: a) start mid
+      !endB <- findIndexOfGtElem src endElem mid end
+      return (Just (Indices start endA mid endB,BuildStep endA endB 1))
+    BuildStep prevEndA prevEndB ix ->
+      if | prevEndA == mid && prevEndB == end -> return Nothing
+         | prevEndA == mid ->
+             return (Just (Indices mid mid prevEndB end,BuildStep mid end (ix + 1)))
+         | prevEndB == end ->
+             return (Just (Indices prevEndA mid end end,BuildStep mid end (ix + 1)))
+         | otherwise -> if ix == threads - 1
+             then return (Just (Indices prevEndA mid prevEndB end, BuildStep mid end (ix + 1)))
+             else do
+               -- We use the left half for this lookup. We could instead
+               -- use both halves and take the median.
+               !endElem <- readByteArray src (start + chunk * (ix + 1))
+               !endA <- findIndexOfGtElem src (endElem :: a) prevEndA mid
+               !endB <- findIndexOfGtElem src endElem prevEndB end
+               return (Just (Indices prevEndA endA prevEndB endB, BuildStep endA endB (ix + 1)))
+  ) BuildBegin
   where
   !chunk = div (end - start) threads
 
@@ -201,6 +349,20 @@ merge :: forall s a. (Ord a, Prim a)
   -> ST s ()
 merge !_ !src !dst !start !mid !end = mergeNonContiguous (proxy# :: Proxy# a) src dst start mid mid end start
 
+mergeTagged :: forall s n a. (Ord a, Prim a, Prim n)
+  => Proxy# a
+  -> Proxy# n
+  -> MutableByteArray s -- source
+  -> MutableByteArray s -- dest
+  -> MutableByteArray s -- source tags
+  -> MutableByteArray s -- dest tags
+  -> Int -- start
+  -> Int -- middle
+  -> Int -- end
+  -> ST s ()
+mergeTagged !_ !_ !src !dst !srcTags !dstTags !start !mid !end =
+  mergeNonContiguousTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) src dst srcTags dstTags start mid mid end start
+
 mergeNonContiguous :: forall s a. (Ord a, Prim a)
   => Proxy# a
   -> MutableByteArray s -- source
@@ -241,6 +403,56 @@ mergeNonContiguous !_ !src !dst !startA !endA !startB !endB !startDst =
   finishB !ixB !ixDst = copyMutableByteArray (proxy# :: Proxy# a) dst ixDst src ixB (endB - ixB)
   finishA :: Int -> Int -> ST s ()
   finishA !ixA !ixDst = copyMutableByteArray (proxy# :: Proxy# a) dst ixDst src ixA (endA - ixA)
+
+mergeNonContiguousTagged :: forall s n a. (Ord a, Prim a, Prim n)
+  => Proxy# a
+  -> Proxy# n
+  -> MutableByteArray s -- source
+  -> MutableByteArray s -- dest
+  -> MutableByteArray s -- source tags
+  -> MutableByteArray s -- dest tags
+  -> Int -- start A
+  -> Int -- end A
+  -> Int -- start B
+  -> Int -- end B
+  -> Int -- start destination
+  -> ST s ()
+mergeNonContiguousTagged !_ !_ !src !dst !srcTags !dstTags !startA !endA !startB !endB !startDst =
+  if startB < endB
+    then stepA startA startB startDst
+    else if startA < endA
+      then stepB startA startB startDst
+      else return ()
+  where
+  continue :: Int -> Int -> Int -> ST s ()
+  continue ixA ixB ixDst = do
+    !a <- readByteArray src ixA
+    !b <- readByteArray src ixB
+    if (a :: a) <= b
+      then do
+        writeByteArray dst ixDst a
+        (readByteArray srcTags ixA :: ST s n) >>= writeByteArray dstTags ixA
+        stepA (ixA + 1) ixB (ixDst + 1)
+      else do
+        writeByteArray dst ixDst b
+        (readByteArray srcTags ixB :: ST s n) >>= writeByteArray dstTags ixB
+        stepB ixA (ixB + 1) (ixDst + 1)
+  stepB :: Int -> Int -> Int -> ST s ()
+  stepB !ixA !ixB !ixDst = if ixB < endB
+    then continue ixA ixB ixDst
+    else finishA ixA ixDst
+  stepA :: Int -> Int -> Int -> ST s ()
+  stepA !ixA !ixB !ixDst = if ixA < endA
+    then continue ixA ixB ixDst
+    else finishB ixB ixDst
+  finishB :: Int -> Int -> ST s ()
+  finishB !ixB !ixDst = do
+    copyMutableByteArray (proxy# :: Proxy# a) dst ixDst src ixB (endB - ixB)
+    copyMutableByteArray (proxy# :: Proxy# n) dstTags ixDst srcTags ixB (endB - ixB)
+  finishA :: Int -> Int -> ST s ()
+  finishA !ixA !ixDst = do
+    copyMutableByteArray (proxy# :: Proxy# a) dst ixDst src ixA (endA - ixA)
+    copyMutableByteArray (proxy# :: Proxy# n) dstTags ixDst srcTags ixA (endA - ixA)
 
 -- step is a more simple approach, but it actually
 -- slows down the merge process by 10%. Weird.
@@ -304,7 +516,6 @@ insertElement !arr !a !start !end = go end
       writeByteArray arr ix a
 
 forkST_ :: ST s a -> ST s ()
-{-# INLINE forkST_ #-}
 forkST_ action = ST $ \s1 -> case forkST# action s1 of
   (# s2, _ #) -> (# s2, () #)
 
@@ -351,7 +562,6 @@ copyMutableByteArray :: forall s a.
   -> Int -- ^ offset into source array
   -> Int -- ^ number of bytes to copy
   -> ST s ()
-{-# INLINE copyMutableByteArray #-}
 copyMutableByteArray !_ (MutableByteArray dst#) (I# doff#) (MutableByteArray src#) (I# soff#) (I# n#)
   = ST $ \s1 -> case copyMutableByteArray# src# (soff# *# (sizeOf# (undefined :: a))) dst# (doff# *# (sizeOf# (undefined :: a))) (n# *# (sizeOf# (undefined :: a))) s1 of
       s2 -> (# s2, () #)

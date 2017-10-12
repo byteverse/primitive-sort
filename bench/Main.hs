@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MagicHash #-}
 
 import Criterion.Main 
 import Type.Reflection (typeRep,TypeRep)
@@ -9,6 +10,7 @@ import Control.Monad.ST (ST,runST)
 import Data.Int
 import Data.Word
 import System.Random (mkStdGen,randoms,Random)
+import GHC.Prim (proxy#, Proxy#)
 import qualified GHC.OldList as L
 import qualified Sort.Merge.Int8
 import qualified Sort.Merge.Word16
@@ -25,6 +27,8 @@ main = defaultMain
   , bgroup "specialize"
     [ benchType (typeRep :: TypeRep Int8) Sort.Merge.sortInt8
     , benchType (typeRep :: TypeRep Word) Sort.Merge.sortWord
+    -- , benchType (typeRep :: TypeRep Int) sortInt
+    -- , benchType (typeRep :: TypeRep Word32) (Sort.Merge.sort (proxy# :: Proxy# Word32))
     ]
   ]
 
