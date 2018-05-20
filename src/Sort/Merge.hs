@@ -181,12 +181,6 @@ splitMergeParallelTagged !_ !_ !arr !work !arrTags !workTags !level !start !end 
       mergeParallelTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) work arr workTags arrTags level start mid end
   else splitMergeTagged (proxy# :: Proxy# a) (proxy# :: Proxy# n) arr work arrTags workTags start end
 
-replicateIxed :: Monad m => Int -> (Int -> m a) -> m ()
-replicateIxed !n f = go (n - 1) where
-  go !ix = if ix >= 0
-    then f ix >> go (ix - 1)
-    else return ()
-
 splitMergeTagged :: forall s n a. (Ord a, Prim a, Prim n)
   => Proxy# a
   -> Proxy# n

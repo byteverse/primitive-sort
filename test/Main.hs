@@ -9,12 +9,14 @@
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 
 import Test.Tasty
+import Test.Tasty.HUnit (testCase)
 import Test.Tasty.SmallCheck as SC
 import Test.Tasty.QuickCheck as QC
 import Test.QuickCheck as Q
 import qualified Test.QuickCheck.Property as QP
 import Type.Reflection (TypeRep,typeRep)
 import qualified Test.SmallCheck.Series as SCS
+import Test.HUnit.Base ((@?=))
 
 import Data.List
 import Data.Word
@@ -30,6 +32,7 @@ import Data.Primitive (ByteArray(..),PrimArray(..),Prim,Array)
 import qualified GHC.Exts as E
 import qualified GHC.OldList as L
 import qualified Data.Set as S
+import qualified Data.Map as M
 import qualified Data.Primitive as P
 import qualified Sort.Merge
 import qualified Data.Primitive.Sort
@@ -48,6 +51,27 @@ main = defaultMain $ testGroup "Sort"
          in if actual == expected
               then Right "unused"
               else Left ("expected " ++ show expected ++ " but got " ++ show actual)
+    , testCase "sortTagged" $
+        Data.Primitive.Sort.sortTagged
+          (E.fromList [2, 1, 0] :: Array Int)
+          (E.fromList [True, True, False] :: Array Bool)
+        @?=
+        (E.fromList [0,1,2], E.fromList [False,True,True] :: Array Bool)
+    , testCase "sortUniqueTagged" $
+        Data.Primitive.Sort.sortUniqueTagged
+          (E.fromList [2, 1, 0] :: Array Int)
+          (E.fromList [True, True, False] :: Array Bool)
+        @?=
+        (E.fromList [0,1,2], E.fromList [False,True,True] :: Array Bool)
+    , SC.testProperty "sortUniqueTagged == Map.toList . Map.fromList" $ \(list :: [(Int,Bool)]) ->
+        let keys = E.fromList (map fst list) :: Array Int
+            vals = E.fromList (map snd list) :: Array Bool
+            (actualKeys,actualVals) = Data.Primitive.Sort.sortUniqueTagged keys vals
+            actual = zip (E.toList actualKeys) (E.toList actualVals)
+            expected = M.toList (M.fromList list)
+         in if actual == expected
+              then Right "unused"
+              else Left ("expected " ++ show expected ++ " but got " ++ show actual)
     ]
   , testGroup "Plain"
     [ tests (typeRep :: TypeRep Int8) Sort.Merge.sortInt8
@@ -56,7 +80,8 @@ main = defaultMain $ testGroup "Sort"
     ]
   , testGroup "Tagged"
     [ testsTagged (typeRep :: TypeRep Word8) (typeRep :: TypeRep Word) Sort.Merge.sortWord8Word
-    , testsTagged (typeRep :: TypeRep Word16) (typeRep :: TypeRep Word32) Sort.Merge.sortWord16Word32
+    , testsTagged (typeRep :: TypeRep Word16) (typeRep :: TypeRep Word32)
+        (\k v -> pairPrimArrayToByteArray $ uncurry (Data.Primitive.Sort.sortTagged @Word16 @Word32) $ pairByteArrayToPrimArray (k,v))
     ]
   ]
 
@@ -65,6 +90,12 @@ primArrayToByteArray (PrimArray x) = ByteArray x
 
 byteArrayToPrimArray :: ByteArray -> PrimArray a
 byteArrayToPrimArray (ByteArray x) = PrimArray x
+
+pairPrimArrayToByteArray :: (PrimArray a, PrimArray b) -> (ByteArray,ByteArray)
+pairPrimArrayToByteArray (PrimArray x,PrimArray y) = (ByteArray x,ByteArray y)
+
+pairByteArrayToPrimArray :: (ByteArray,ByteArray) -> (PrimArray a, PrimArray b) 
+pairByteArrayToPrimArray (ByteArray x,ByteArray y) = (PrimArray x,PrimArray y)
 
 tests :: forall n. (Prim n, Ord n, Show n, Arbitrary n, Serial IO n) => TypeRep n -> (ByteArray -> ByteArray) -> TestTree
 tests p sortArray = testGroup (show p) [properties (Proxy :: Proxy n) sortArray, unitTests (Proxy :: Proxy n) sortArray]
