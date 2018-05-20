@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeApplications #-}
 
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 
@@ -24,17 +25,31 @@ import Control.Monad.ST (ST,runST)
 import Test.SmallCheck.Series (Serial(..),Series)
 import Control.Exception (Exception,toException)
 import Control.Applicative (liftA2)
+import Data.Primitive (ByteArray(..),PrimArray(..),Prim,Array)
 
+import qualified GHC.Exts as E
 import qualified GHC.OldList as L
+import qualified Data.Set as S
 import qualified Data.Primitive as P
 import qualified Sort.Merge
+import qualified Data.Primitive.Sort
 -- import qualified Sort.Merge.Int8
 -- import qualified Sort.Merge.Word16
 -- import qualified Sort.Merge.Word
 
 main :: IO ()
-main = defaultMain $ testGroup "Merge Sort"
-  [ testGroup "Plain"
+main = defaultMain $ testGroup "Sort"
+  [ testGroup "Contiguous"
+    [ tests (typeRep :: TypeRep Int8) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Int8 . byteArrayToPrimArray)
+    , tests (typeRep :: TypeRep Word) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Word . byteArrayToPrimArray)
+    , SC.testProperty "sortUnique == Set.toList . Set.fromList" $ \(list :: [Int]) ->
+        let actual = E.toList (Data.Primitive.Sort.sortUnique (E.fromList list :: Array Int))
+            expected = S.toList (S.fromList list)
+         in if actual == expected
+              then Right "unused"
+              else Left ("expected " ++ show expected ++ " but got " ++ show actual)
+    ]
+  , testGroup "Plain"
     [ tests (typeRep :: TypeRep Int8) Sort.Merge.sortInt8
     , tests (typeRep :: TypeRep Word16) Sort.Merge.sortWord16
     , tests (typeRep :: TypeRep Word) Sort.Merge.sortWord
@@ -44,6 +59,12 @@ main = defaultMain $ testGroup "Merge Sort"
     , testsTagged (typeRep :: TypeRep Word16) (typeRep :: TypeRep Word32) Sort.Merge.sortWord16Word32
     ]
   ]
+
+primArrayToByteArray :: PrimArray a -> ByteArray
+primArrayToByteArray (PrimArray x) = ByteArray x
+
+byteArrayToPrimArray :: ByteArray -> PrimArray a
+byteArrayToPrimArray (ByteArray x) = PrimArray x
 
 tests :: forall n. (Prim n, Ord n, Show n, Arbitrary n, Serial IO n) => TypeRep n -> (ByteArray -> ByteArray) -> TestTree
 tests p sortArray = testGroup (show p) [properties (Proxy :: Proxy n) sortArray, unitTests (Proxy :: Proxy n) sortArray]
@@ -228,21 +249,6 @@ eqByteArray paA paB =
   in if sizA == sizB
        then go 0
        else False
-
-instance Monad m => Serial m Int8 where
-  series = fmap fromIntegral (series :: Series m Int)
-
-instance Monad m => Serial m Word16 where
-  series = fmap fromIntegral (series :: Series m (SCS.Positive Int))
-
-instance Monad m => Serial m Word where
-  series = fmap fromIntegral (series :: Series m (SCS.Positive Int))
-
-instance Monad m => Serial m Word8 where
-  series = fmap fromIntegral (series :: Series m (SCS.Positive Int))
-
-instance Monad m => Serial m Word32 where
-  series = fmap fromIntegral (series :: Series m (SCS.Positive Int))
 
 data Tag a b = Tag a b
   deriving (Show)
