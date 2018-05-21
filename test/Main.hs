@@ -34,7 +34,6 @@ import qualified GHC.OldList as L
 import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.Primitive as P
-import qualified Sort.Merge
 import qualified Data.Primitive.Sort
 -- import qualified Sort.Merge.Int8
 -- import qualified Sort.Merge.Word16
@@ -73,14 +72,8 @@ main = defaultMain $ testGroup "Sort"
               then Right "unused"
               else Left ("expected " ++ show expected ++ " but got " ++ show actual)
     ]
-  , testGroup "Plain"
-    [ tests (typeRep :: TypeRep Int8) Sort.Merge.sortInt8
-    , tests (typeRep :: TypeRep Word16) Sort.Merge.sortWord16
-    , tests (typeRep :: TypeRep Word) Sort.Merge.sortWord
-    ]
   , testGroup "Tagged"
-    [ testsTagged (typeRep :: TypeRep Word8) (typeRep :: TypeRep Word) Sort.Merge.sortWord8Word
-    , testsTagged (typeRep :: TypeRep Word16) (typeRep :: TypeRep Word32)
+    [ testsTagged (typeRep :: TypeRep Word16) (typeRep :: TypeRep Word32)
         (\k v -> pairPrimArrayToByteArray $ uncurry (Data.Primitive.Sort.sortTagged @Word16 @Word32) $ pairByteArrayToPrimArray (k,v))
     ]
   ]

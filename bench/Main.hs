@@ -13,29 +13,15 @@ import Data.Word
 import System.Random (mkStdGen,randoms,Random)
 import GHC.Prim (proxy#, Proxy#)
 import qualified GHC.OldList as L
-import qualified Sort.Merge.Int8
-import qualified Sort.Merge.Word16
-import qualified Sort.Merge.Word
-import qualified Sort.Merge
 import qualified Data.Primitive as P
 import qualified Data.Primitive.Sort
 import qualified GHC.Exts as E
 
 main :: IO ()
 main = defaultMain
-  [ bgroup "backpack"
-    [ benchType (typeRep :: TypeRep Int8) Sort.Merge.Int8.sort
-    , benchType (typeRep :: TypeRep Word) Sort.Merge.Word.sort
-    ]
-  , bgroup "specialize"
-    [ benchType (typeRep :: TypeRep Int8) Sort.Merge.sortInt8
-    , benchType (typeRep :: TypeRep Word) Sort.Merge.sortWord
-    ]
-  , bgroup "contiguous"
+  [ bgroup "contiguous"
     [ benchType (typeRep :: TypeRep Int8) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Int8 . byteArrayToPrimArray)
     , benchType (typeRep :: TypeRep Word) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Word . byteArrayToPrimArray)
-    -- , benchType (typeRep :: TypeRep Int) sortInt
-    -- , benchType (typeRep :: TypeRep Word32) (Sort.Merge.sort (proxy# :: Proxy# Word32))
     ]
   , bgroup "tagged-unique"
     [ bench "mini" (whnf (\(k,v) -> evalPair (Data.Primitive.Sort.sortUniqueTagged k v)) (sizedInts Mini, sizedInts Mini))
