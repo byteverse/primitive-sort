@@ -95,7 +95,7 @@ sortMutable !dst = do
       C.copyMutable work 0 dst 0 len 
       caps <- unsafeEmbedIO getNumCapabilities
       let minElemsPerThread = 20000
-          maxThreads = div len minElemsPerThread
+          maxThreads = unsafeQuot len minElemsPerThread
           preThreads = min caps maxThreads
           threads = if preThreads == 1 then 1 else preThreads * 8
       -- I cannot understand why, but GHC's runtime does better
@@ -153,34 +153,38 @@ sortTaggedMutableN :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, 
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v)
 {-# INLINABLE sortTaggedMutableN #-}
-sortTaggedMutableN !len !dst !dstTags = do
-  work <- C.cloneMutable dst 0 len 
-  workTags <- C.cloneMutable dstTags 0 len 
-  caps <- unsafeEmbedIO getNumCapabilities
-  let minElemsPerThread = 20000
-      maxThreads = div len minElemsPerThread
-      preThreads = min caps maxThreads
-      threads = if preThreads == 1 then 1 else preThreads * 8
-  splitMergeParallelTagged dst work dstTags workTags threads 0 len
-  return (dst,dstTags)
+sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
+  then do
+    insertionSortTaggedRange dst dstTags 0 len
+    return (dst,dstTags)
+  else do
+    work <- C.cloneMutable dst 0 len 
+    workTags <- C.cloneMutable dstTags 0 len 
+    caps <- unsafeEmbedIO getNumCapabilities
+    let minElemsPerThread = 20000
+        maxThreads = unsafeQuot len minElemsPerThread
+        preThreads = min caps maxThreads
+        threads = if preThreads == 1 then 1 else preThreads * 8
+    splitMergeParallelTagged dst work dstTags workTags threads 0 len
+    return (dst,dstTags)
 
 sortUnique :: (Contiguous arr, Element arr a, Ord a)
   => arr a -> arr a
+{-# INLINABLE sortUnique #-}
 sortUnique src = runST $ do
   let len = C.size src
   dst <- C.new len
   C.copy dst 0 src 0 len
   res <- sortUniqueMutable dst
   C.unsafeFreeze res
-{-# INLINABLE sortUnique #-}
 
 sortUniqueMutable :: (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a
   -> ST s (Mutable arr s a)
+{-# INLINABLE sortUniqueMutable #-}
 sortUniqueMutable marr = do
   res <- sortMutable marr
   uniqueMutable res
-{-# INLINABLE sortUniqueMutable #-}
 
 -- | Discards adjacent equal elements from an array. This operation
 -- may run in-place, or it may need to allocate a new array, so the
@@ -264,7 +268,7 @@ unsafeEmbedIO :: IO a -> ST s a
 unsafeEmbedIO (IO f) = ST (unsafeCoerce# f)
 
 half :: Int -> Int
-half x = div x 2
+half x = unsafeQuot x 2
 
 splitMergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a -- source and destination
@@ -278,7 +282,7 @@ splitMergeParallel !arr !work !level !start !end = if level > 1
   then if end - start < threshold
     then insertionSortRange arr start end
     else do
-      let !mid = div (end + start) 2
+      let !mid = unsafeQuot (end + start) 2
           !levelDown = half level
       tandem 
         (splitMergeParallel work arr levelDown start mid)
@@ -298,7 +302,7 @@ splitMergeParallelTagged :: forall karr varr s k v. (Contiguous karr, Element ka
 {-# INLINABLE splitMergeParallelTagged #-}
 splitMergeParallelTagged !arr !work !arrTags !workTags !level !start !end = if level > 1
   then do
-    let !mid = div (end + start) 2
+    let !mid = unsafeQuot (end + start) 2
         !levelDown = half level
     tandem 
       (splitMergeParallelTagged work arr workTags arrTags levelDown start mid)
@@ -315,14 +319,13 @@ splitMerge :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
 {-# INLINABLE splitMerge #-}
 splitMerge !arr !work !start !end = if end - start < 2
   then return ()
-  else do
-    if end - start > threshold
-      then do
-        let !mid = div (end + start) 2
-        splitMerge work arr start mid
-        splitMerge work arr mid end
-        mergeNonContiguous work arr start mid mid end start
-      else insertionSortRange arr start end
+  else if end - start > threshold
+    then do
+      let !mid = unsafeQuot (end + start) 2
+      splitMerge work arr start mid
+      splitMerge work arr mid end
+      mergeNonContiguous work arr start mid mid end start
+    else insertionSortRange arr start end
 
 splitMergeTagged :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
   => Mutable karr s k -- source and destination
@@ -335,11 +338,13 @@ splitMergeTagged :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, El
 {-# INLINABLE splitMergeTagged #-}
 splitMergeTagged !arr !work !arrTags !workTags !start !end = if end - start < 2
   then return ()
-  else do
-    let !mid = div (end + start) 2
-    splitMergeTagged work arr workTags arrTags start mid
-    splitMergeTagged work arr workTags arrTags mid end
-    mergeNonContiguousTagged work arr workTags arrTags start mid mid end start
+  else if end - start > thresholdTagged
+    then do
+      let !mid = unsafeQuot (end + start) 2
+      splitMergeTagged work arr workTags arrTags start mid
+      splitMergeTagged work arr workTags arrTags mid end
+      mergeNonContiguousTagged work arr workTags arrTags start mid mid end start
+    else insertionSortTaggedRange arr arrTags start end
 
 -- Precondition: threads is greater than 0
 mergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
@@ -352,7 +357,7 @@ mergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> ST s ()
 {-# INLINABLE mergeParallel #-}
 mergeParallel !src !dst !threads !start !mid !end = do
-  lock <- newLock
+  !lock <- newLock
   let go :: Int -- previous A end
          -> Int -- previous B end
          -> Int -- how many chunk have we already iterated over
@@ -414,7 +419,7 @@ mergeParallel !src !dst !threads !start !mid !end = do
   total <- go endA endB 1
   replicateM_ total (takeLock lock)
   where
-  !chunk = div (end - start) threads
+  !chunk = unsafeQuot (end - start) threads
 
 -- Precondition: threads is greater than 0
 -- This function is just a copy of mergeParallel but with
@@ -431,7 +436,7 @@ mergeParallelTagged :: forall karr varr s k v. (Contiguous karr, Element karr k,
   -> ST s ()
 {-# INLINABLE mergeParallelTagged #-}
 mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
-  lock <- newLock
+  !lock <- newLock
   let go :: Int -- previous A end
          -> Int -- previous B end
          -> Int -- how many chunk have we already iterated over
@@ -493,7 +498,10 @@ mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
   total <- go endA endB 1
   replicateM_ total (takeLock lock)
   where
-  !chunk = div (end - start) threads
+  !chunk = unsafeQuot (end - start) threads
+
+unsafeQuot :: Int -> Int -> Int
+unsafeQuot (I# a) (I# b) = I# (quotInt# a b)
 
 -- If the needle is bigger than everything in the slice
 -- of the array, this returns the end index (which is out
@@ -585,6 +593,7 @@ mergeNonContiguousTagged :: forall karr varr k v s. (Contiguous karr, Element ka
   -> Int -- end B
   -> Int -- start destination
   -> ST s ()
+{-# INLINABLE mergeNonContiguousTagged #-}
 mergeNonContiguousTagged !src !dst !srcTags !dstTags !startA !endA !startB !endB !startDst =
   if startB < endB
     then stepA startA startB startDst
@@ -625,6 +634,9 @@ mergeNonContiguousTagged !src !dst !srcTags !dstTags !startA !endA !startB !endB
 threshold :: Int
 threshold = 16
 
+thresholdTagged :: Int
+thresholdTagged = 16
+
 insertionSortRange :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a
   -> Int -- start
@@ -662,6 +674,53 @@ insertElement !arr !a !start !end = go end
     else do
       C.copyMutable arr (ix + 1) arr ix (end - ix)
       C.write arr ix a
+
+insertionSortTaggedRange :: forall karr varr s k v. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
+  => Mutable karr s k
+  -> Mutable varr s v
+  -> Int -- start
+  -> Int -- end
+  -> ST s ()
+{-# INLINABLE insertionSortTaggedRange #-}
+insertionSortTaggedRange !karr !varr !start !end = go start
+  where
+  go :: Int -> ST s ()
+  go !ix = if ix < end
+    then do
+      !a <- C.read karr ix
+      !v <- C.read varr ix
+      insertElementTagged karr varr a v start ix
+      go (ix + 1)
+    else return ()
+    
+insertElementTagged :: forall karr varr s k v. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
+  => Mutable karr s k
+  -> Mutable varr s v
+  -> k
+  -> v
+  -> Int
+  -> Int
+  -> ST s ()
+{-# INLINABLE insertElementTagged #-}
+insertElementTagged !karr !varr !a !v !start !end = go end
+  where
+  go :: Int -> ST s ()
+  go !ix = if ix > start
+    then do
+      !b <- C.read karr (ix - 1)
+      if b <= a
+        then do
+          C.copyMutable karr (ix + 1) karr ix (end - ix)
+          C.write karr ix a
+          C.copyMutable varr (ix + 1) varr ix (end - ix)
+          C.write varr ix v
+        else go (ix - 1)
+    else do
+      C.copyMutable karr (ix + 1) karr ix (end - ix)
+      C.write karr ix a
+      C.copyMutable varr (ix + 1) varr ix (end - ix)
+      C.write varr ix v
+
 
 forkST_ :: ST s a -> ST s ()
 forkST_ action = ST $ \s1 -> case forkST# action s1 of

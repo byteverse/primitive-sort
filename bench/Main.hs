@@ -19,6 +19,7 @@ import qualified Sort.Merge.Word
 import qualified Sort.Merge
 import qualified Data.Primitive as P
 import qualified Data.Primitive.Sort
+import qualified GHC.Exts as E
 
 main :: IO ()
 main = defaultMain
@@ -29,8 +30,6 @@ main = defaultMain
   , bgroup "specialize"
     [ benchType (typeRep :: TypeRep Int8) Sort.Merge.sortInt8
     , benchType (typeRep :: TypeRep Word) Sort.Merge.sortWord
-    -- , benchType (typeRep :: TypeRep Int) sortInt
-    -- , benchType (typeRep :: TypeRep Word32) (Sort.Merge.sort (proxy# :: Proxy# Word32))
     ]
   , bgroup "contiguous"
     [ benchType (typeRep :: TypeRep Int8) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Int8 . byteArrayToPrimArray)
@@ -38,7 +37,15 @@ main = defaultMain
     -- , benchType (typeRep :: TypeRep Int) sortInt
     -- , benchType (typeRep :: TypeRep Word32) (Sort.Merge.sort (proxy# :: Proxy# Word32))
     ]
+  , bgroup "tagged-unique"
+    [ bench "mini" (whnf (\(k,v) -> evalPair (Data.Primitive.Sort.sortUniqueTagged k v)) (sizedInts Mini, sizedInts Mini))
+    , bench "tiny" (whnf (\(k,v) -> evalPair (Data.Primitive.Sort.sortUniqueTagged k v)) (sizedInts Tiny, sizedInts Tiny))
+    , bench "small" (whnf (\(k,v) -> evalPair (Data.Primitive.Sort.sortUniqueTagged k v)) (sizedInts Small, sizedInts Small))
+    ]
   ]
+
+evalPair :: (PrimArray a, PrimArray b) -> ()
+evalPair (!_,!_) = ()
 
 primArrayToByteArray :: PrimArray a -> ByteArray
 primArrayToByteArray (PrimArray x) = ByteArray x
@@ -75,6 +82,23 @@ numSize x = case x of
   Medium -> 10000
   Large -> 100000
   Gigantic -> 1000000
+
+sizedInts :: Size -> PrimArray Int
+sizedInts x = case x of
+  Mini -> intsMini
+  Tiny -> intsTiny
+  Small -> intsSmall
+  Medium -> intsMedium
+  Large -> intsLarge
+  Gigantic -> intsGigantic
+
+intsMini,intsTiny,intsSmall,intsMedium,intsLarge,intsGigantic :: PrimArray Int
+intsMini = E.fromList (L.take 10 (randoms (mkStdGen 23) :: [Int]))
+intsTiny = E.fromList (L.take 100 (randoms (mkStdGen 87) :: [Int]))
+intsSmall = E.fromList (L.take 1000 (randoms (mkStdGen 19) :: [Int]))
+intsMedium = E.fromList (L.take 10000 (randoms (mkStdGen 47) :: [Int]))
+intsLarge = E.fromList (L.take 100000 (randoms (mkStdGen 53) :: [Int]))
+intsGigantic = E.fromList (L.take 1000000 (randoms (mkStdGen 12) :: [Int]))
 
 showArrangement :: Arrangement -> String
 showArrangement x = case x of
@@ -113,9 +137,12 @@ presorted :: forall a. (Prim a, Num a, Enum a, Bounded a) => TypeRep a -> Int ->
 presorted typ n = byteArrayFromList
   (L.take n (iterate (+1) (minBound :: a)))
 
-reversed :: forall a. (Prim a, Num a, Enum a, Bounded a) => TypeRep a -> Int -> ByteArray
+reversed :: forall a. (Prim a, Num a, Enum a, Bounded a)
+  => TypeRep a -> Int -> ByteArray
 reversed typ n = byteArrayFromList
   (L.take n (iterate (subtract 1) (maxBound :: a)))
+
+
 
 byteArrayFromList :: Prim a => [a] -> ByteArray
 byteArrayFromList xs = byteArrayFromListN (L.length xs) xs
