@@ -1,8 +1,15 @@
-name: mergesort
+cabal-version: 2.0
+name: primitive-sort
 version: 0.1
-synopsis: Parallel Mergesort
-description: Parallel Mergesort
-homepage: https://github.com/andrewthad/mergesort
+synopsis: Sort primitive arrays
+description:
+  This library provides a stable sorting algorithm for primitive arrays.
+  When extra capabilities are available, the sort is parallelized.
+  .
+  The algorithm currently uses mergesort on large chunks and switches
+  to insertion sort on small chunks. The are also novel improvements
+  to increase the performance if the input array is already mostly sorted.
+homepage: https://github.com/andrewthad/primitive-sort
 license: BSD3
 license-file: LICENSE
 author: Andrew Martin
@@ -11,13 +18,16 @@ copyright: 2017 Andrew Martin
 category: software
 build-type: Simple
 extra-source-files: README.md
-cabal-version: >=1.25
 
 library
   hs-source-dirs: src
   exposed-modules:
     Data.Primitive.Sort
-  build-depends: base, primitive, ghc-prim, contiguous
+  build-depends:
+      base
+    , primitive
+    , ghc-prim
+    , contiguous
   default-language: Haskell2010
 
 test-suite test
@@ -26,7 +36,7 @@ test-suite test
   main-is: Main.hs
   build-depends:
       base
-    , mergesort
+    , primitive-sort
     , tasty
     , tasty-hunit
     , tasty-smallcheck
@@ -43,7 +53,7 @@ benchmark bench
   type: exitcode-stdio-1.0
   build-depends:
       base
-    , mergesort
+    , primitive-sort
     , gauge
     , random
     , primitive
@@ -55,5 +65,5 @@ benchmark bench
 
 source-repository head
   type: git
-  location: https://github.com/andrewthad/mergesort
+  location: https://github.com/andrewthad/primitive-sort
 
