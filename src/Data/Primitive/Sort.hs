@@ -5,14 +5,18 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
 
-{-# OPTIONS_GHC -O2 -Wall #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Sort primitive arrays with a stable sorting algorithm. All functions
+-- in this module are marked as @INLINABLE@, so they will specialize
+-- when used in a monomorphic setting.
 module Data.Primitive.Sort
-  ( -- * Sorting
+  ( -- * Immutable
     sort
   , sortUnique
   , sortTagged
   , sortUniqueTagged
+    -- * Mutable
   , sortMutable
   , sortUniqueMutable
   , sortTaggedMutable
@@ -30,6 +34,10 @@ import Control.Concurrent (getNumCapabilities)
 import Data.Primitive.Contiguous (Contiguous,Mutable,Element)
 import qualified Data.Primitive.Contiguous as C
 
+-- | Sort an immutable array. Duplicate elements are preserved.
+--
+-- >>> sort ([5,6,7,9,5,4,5,7] :: Array Int)
+-- fromListN 8 [4,5,5,5,6,7,7,9]
 sort :: (Contiguous arr, Element arr a, Ord a)
   => arr a
   -> arr a
@@ -41,9 +49,21 @@ sort !src = runST $ do
   res <- sortMutable dst
   C.unsafeFreeze res
 
+-- | Sort a tagged immutable array. Each element from the @keys@ array is
+-- paired up with an element from the @values@ array at the matching
+-- index. The sort permutes the @values@ array so that a value end up
+-- in the same position as its corresponding key. The two argument array
+-- should be of the same length, but if one is shorter than the other,
+-- the longer one will be truncated so that the lengths match.
+--
+-- >>> sortTagged ([5,6,7,5,5,7] :: Array Int) ([1,2,3,4,5,6] :: Array Int)
+-- (fromListN 6 [5,5,5,6,7,7],fromListN 6 [1,4,5,2,3,6])
+--
+-- Since the sort is stable, the values corresponding to a key that
+-- appears multiple times have their original order preserved.
 sortTagged :: forall k v karr varr. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
-  => karr k
-  -> varr v
+  => karr k -- ^ keys
+  -> varr v -- ^ values
   -> (karr k,varr v)
 {-# INLINABLE sortTagged #-}
 sortTagged !src !srcTags = runST $ do
@@ -57,9 +77,17 @@ sortTagged !src !srcTags = runST $ do
   resTags' <- C.unsafeFreeze resTags
   return (res',resTags')
 
+-- | Sort a tagged immutable array. Only a single copy of each
+-- duplicate key is preserved, along with the last value from @values@
+-- that corresponded to it. The two argument arrays
+-- should be of the same length, but if one is shorter than the other,
+-- the longer one will be truncated so that the lengths match.
+--
+-- >>> sortUniqueTagged ([5,6,7,5,5,7] :: Array Int) ([1,2,3,4,5,6] :: Array Int)
+-- (fromListN 3 [5,6,7],fromListN 3 [5,2,6])
 sortUniqueTagged :: forall k v karr varr. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
-  => karr k
-  -> varr v
+  => karr k -- ^ keys
+  -> varr v -- ^ values
   -> (karr k,varr v)
 {-# INLINABLE sortUniqueTagged #-}
 sortUniqueTagged !src !srcTags = runST $ do
@@ -75,12 +103,8 @@ sortUniqueTagged !src !srcTags = runST $ do
   return (res',resTags')
 
 -- | Sort the mutable array. This operation preserves duplicate
--- elements. For example:
---
--- > [5,7,2,3,5,4,3] => [3,3,4,5,5,7]
---
--- The argument may either be modified in-place, or another
--- array may be allocated and returned. Consequently the argument
+-- elements. The argument may either be modified in-place, or another
+-- array may be allocated and returned. The argument
 -- may not be reused after being passed to this function.
 sortMutable :: (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a
@@ -138,8 +162,8 @@ alignArrays dst0 dstTags0 = do
         return (dst,dstTags0,lenDstTags)
 
 sortUniqueTaggedMutable :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
-  => Mutable karr s k
-  -> Mutable varr s v
+  => Mutable karr s k -- ^ keys
+  -> Mutable varr s v -- ^ values
   -> ST s (Mutable karr s k, Mutable varr s v)
 {-# INLINABLE sortUniqueTaggedMutable #-}
 sortUniqueTaggedMutable dst0 dstTags0 = do
@@ -168,6 +192,11 @@ sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
     splitMergeParallelTagged dst work dstTags workTags threads 0 len
     return (dst,dstTags)
 
+-- | Sort an immutable array. Only a single copy of each duplicated
+-- element is preserved.
+--
+-- >>> sortUnique ([5,6,7,9,5,4,5,7] :: Array Int)
+-- fromListN 5 [4,5,6,7,9]
 sortUnique :: (Contiguous arr, Element arr a, Ord a)
   => arr a -> arr a
 {-# INLINABLE sortUnique #-}
@@ -178,6 +207,10 @@ sortUnique src = runST $ do
   res <- sortUniqueMutable dst
   C.unsafeFreeze res
 
+-- | Sort an immutable array. Only a single copy of each duplicated
+-- element is preserved. This operation may run in-place, or it may
+-- need to allocate a new array, so the argument may not be reused
+-- after this function is applied to it. 
 sortUniqueMutable :: (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a
   -> ST s (Mutable arr s a)
@@ -752,4 +785,12 @@ tandem a b = do
   forkST_ (b >> putLock lock)
   a
   takeLock lock
+
+-- $setup
+--
+-- These are to make doctest work correctly.
+--
+-- >>> :set -XOverloadedLists
+-- >>> import Data.Primitive.Array (Array)
+--
 

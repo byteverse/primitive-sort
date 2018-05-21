@@ -28,6 +28,7 @@ library
     , primitive
     , ghc-prim
     , contiguous
+  ghc-options: -O2
   default-language: Haskell2010
 
 test-suite test
@@ -47,6 +48,17 @@ test-suite test
     , QuickCheck
     , HUnit
   ghc-options: -threaded -rtsopts -O2 -with-rtsopts=-N
+  default-language: Haskell2010
+
+test-suite doctest
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Doctest.hs
+  build-depends:
+      base
+    , primitive-sort
+    , doctest >= 0.10
+    , QuickCheck
   default-language: Haskell2010
 
 benchmark bench
