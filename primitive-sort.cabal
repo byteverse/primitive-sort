@@ -24,7 +24,7 @@ library
   exposed-modules:
     Data.Primitive.Sort
   build-depends:
-      base >= 0.4.9
+      base >= 0.4.9 && < 5
     , primitive >= 0.6.4.0
     , ghc-prim
     , contiguous >= 0.1 && < 0.2
