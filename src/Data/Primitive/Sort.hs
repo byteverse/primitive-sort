@@ -30,6 +30,7 @@ import GHC.IO (IO(..))
 import GHC.Int (Int(..))
 import Control.Monad
 import GHC.Prim
+import Data.Primitive.MVar (takeMVar,putMVar,newEmptyMVar)
 import Control.Concurrent (getNumCapabilities)
 import Data.Primitive.Contiguous (Contiguous,Mutable,Element)
 import qualified Data.Primitive.Contiguous as C
@@ -390,7 +391,7 @@ mergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> ST s ()
 {-# INLINABLE mergeParallel #-}
 mergeParallel !src !dst !threads !start !mid !end = do
-  !lock <- newLock
+  !lock <- newEmptyMVar
   let go :: Int -- previous A end
          -> Int -- previous B end
          -> Int -- how many chunk have we already iterated over
@@ -405,7 +406,7 @@ mergeParallel !src !dst !threads !start !mid !end = do
                      !endB = end
                      !startDst = (startA - start) + (startB - mid) + start
                  mergeNonContiguous src dst startA endA startB endB startDst
-                 putLock lock
+                 putMVar lock ()
                go mid end (ix + 1)
            | prevEndB == end -> do
                forkST_ $ do
@@ -415,7 +416,7 @@ mergeParallel !src !dst !threads !start !mid !end = do
                      !endB = end
                      !startDst = (startA - start) + (startB - mid) + start
                  mergeNonContiguous src dst startA endA startB endB startDst
-                 putLock lock
+                 putMVar lock ()
                go mid end (ix + 1)
            | ix == threads - 1 -> do
                forkST_ $ do
@@ -425,7 +426,7 @@ mergeParallel !src !dst !threads !start !mid !end = do
                      !endB = end
                      !startDst = (startA - start) + (startB - mid) + start
                  mergeNonContiguous src dst startA endA startB endB startDst
-                 putLock lock
+                 putMVar lock ()
                return (ix + 1)
            | otherwise -> do
                -- We use the left half for this lookup. We could instead
@@ -438,7 +439,7 @@ mergeParallel !src !dst !threads !start !mid !end = do
                      !startB = prevEndB
                      !startDst = (startA - start) + (startB - mid) + start
                  mergeNonContiguous src dst startA endA startB endB startDst
-                 putLock lock
+                 putMVar lock ()
                go endA endB (ix + 1)
   !endElem <- C.read src (start + chunk) 
   !endA <- findIndexOfGtElem src (endElem :: a) start mid
@@ -448,9 +449,9 @@ mergeParallel !src !dst !threads !start !mid !end = do
         !startB = mid
         !startDst = (startA - start) + (startB - mid) + start
     mergeNonContiguous src dst startA endA startB endB startDst
-    putLock lock
+    putMVar lock ()
   total <- go endA endB 1
-  replicateM_ total (takeLock lock)
+  replicateM_ total (takeMVar lock)
   where
   !chunk = unsafeQuot (end - start) threads
 
@@ -469,7 +470,7 @@ mergeParallelTagged :: forall karr varr s k v. (Contiguous karr, Element karr k,
   -> ST s ()
 {-# INLINABLE mergeParallelTagged #-}
 mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
-  !lock <- newLock
+  !lock <- newEmptyMVar
   let go :: Int -- previous A end
          -> Int -- previous B end
          -> Int -- how many chunk have we already iterated over
@@ -484,7 +485,7 @@ mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
                      !endB = end
                      !startDst = (startA - start) + (startB - mid) + start
                  mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-                 putLock lock
+                 putMVar lock ()
                go mid end (ix + 1)
            | prevEndB == end -> do
                forkST_ $ do
@@ -494,7 +495,7 @@ mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
                      !endB = end
                      !startDst = (startA - start) + (startB - mid) + start
                  mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-                 putLock lock
+                 putMVar lock ()
                go mid end (ix + 1)
            | ix == threads - 1 -> do
                forkST_ $ do
@@ -504,7 +505,7 @@ mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
                      !endB = end
                      !startDst = (startA - start) + (startB - mid) + start
                  mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-                 putLock lock
+                 putMVar lock ()
                return (ix + 1)
            | otherwise -> do
                -- We use the left half for this lookup. We could instead
@@ -517,7 +518,7 @@ mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
                      !startB = prevEndB
                      !startDst = (startA - start) + (startB - mid) + start
                  mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-                 putLock lock
+                 putMVar lock ()
                go endA endB (ix + 1)
   !endElem <- C.read src (start + chunk) 
   !endA <- findIndexOfGtElem src (endElem :: k) start mid
@@ -527,9 +528,9 @@ mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
         !startB = mid
         !startDst = (startA - start) + (startB - mid) + start
     mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-    putLock lock
+    putMVar lock ()
   total <- go endA endB 1
-  replicateM_ total (takeLock lock)
+  replicateM_ total (takeMVar lock)
   where
   !chunk = unsafeQuot (end - start) threads
 
@@ -762,29 +763,15 @@ forkST_ action = ST $ \s1 -> case forkST# action s1 of
 forkST# :: a -> State# s -> (# State# s, ThreadId# #)
 forkST# = unsafeCoerce# fork#
 
-data Lock s = Lock (MVar# s ())
-
-newLock :: ST s (Lock s)
-newLock = ST $ \s1 -> case newMVar# s1 of
-  (# s2, v #) -> (# s2, Lock v #)
-
-takeLock :: Lock s -> ST s ()
-takeLock (Lock mvar#) = ST $ \ s# -> takeMVar# mvar# s#
-
-putLock  :: Lock s -> ST s ()
-putLock (Lock mvar#) = ST $ \ s# ->
-  case putMVar# mvar# () s# of
-    s2# -> (# s2#, () #)
-
 -- | Execute the first computation on the main thread and
 --   the second one on another thread in parallel. Blocks
 --   until both are finished.
 tandem :: ST s () -> ST s () -> ST s ()
 tandem a b = do
-  lock <- newLock
-  forkST_ (b >> putLock lock)
+  lock <- newEmptyMVar
+  forkST_ (b >> putMVar lock ())
   a
-  takeLock lock
+  takeMVar lock
 
 -- $setup
 --
