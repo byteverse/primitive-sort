@@ -40,7 +40,7 @@ library
       , primitive-checked >= 0.6.4.1
   else
     build-depends: 
-        contiguous >= 0.2 && < 0.4
+        contiguous >= 0.2 && < 0.5
       , primitive >= 0.6.4
   ghc-options: -O2
   default-language: Haskell2010
