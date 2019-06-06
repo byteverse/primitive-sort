@@ -42,7 +42,7 @@ import qualified Data.Primitive.Contiguous as C
 sort :: (Contiguous arr, Element arr a, Ord a)
   => arr a
   -> arr a
-{-# INLINABLE sort #-}
+{-# INLINE sort #-}
 sort !src = runST $ do
   let len = C.size src
   dst <- C.new (C.size src)
@@ -66,7 +66,7 @@ sortTagged :: forall k v karr varr. (Contiguous karr, Element karr k, Ord k, Con
   => karr k -- ^ keys
   -> varr v -- ^ values
   -> (karr k,varr v)
-{-# INLINABLE sortTagged #-}
+{-# INLINE sortTagged #-}
 sortTagged !src !srcTags = runST $ do
   let len = min (C.size src) (C.size srcTags)
   dst <- C.new len
@@ -90,7 +90,7 @@ sortUniqueTagged :: forall k v karr varr. (Contiguous karr, Element karr k, Ord 
   => karr k -- ^ keys
   -> varr v -- ^ values
   -> (karr k,varr v)
-{-# INLINABLE sortUniqueTagged #-}
+{-# INLINE sortUniqueTagged #-}
 sortUniqueTagged !src !srcTags = runST $ do
   let len = min (C.size src) (C.size srcTags)
   dst <- C.new len
@@ -110,7 +110,7 @@ sortUniqueTagged !src !srcTags = runST $ do
 sortMutable :: (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a
   -> ST s (Mutable arr s a)
-{-# INLINABLE sortMutable #-}
+{-# INLINE sortMutable #-}
 sortMutable !dst = do
   len <- C.sizeMutable dst
   if len < threshold
@@ -138,7 +138,7 @@ sortTaggedMutable :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, E
   => Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v)
-{-# INLINABLE sortTaggedMutable #-}
+{-# INLINE sortTaggedMutable #-}
 sortTaggedMutable !dst0 !dstTags0 = do
   (!dst,!dstTags,!len) <- alignArrays dst0 dstTags0
   sortTaggedMutableN len dst dstTags
@@ -147,7 +147,7 @@ alignArrays :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element
   => Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v,Int)
-{-# INLINABLE alignArrays #-}
+{-# INLINE alignArrays #-}
 alignArrays dst0 dstTags0 = do
   lenDst <- C.sizeMutable dst0
   lenDstTags <- C.sizeMutable dstTags0
@@ -166,7 +166,7 @@ sortUniqueTaggedMutable :: (Contiguous karr, Element karr k, Ord k, Contiguous v
   => Mutable karr s k -- ^ keys
   -> Mutable varr s v -- ^ values
   -> ST s (Mutable karr s k, Mutable varr s v)
-{-# INLINABLE sortUniqueTaggedMutable #-}
+{-# INLINE sortUniqueTaggedMutable #-}
 sortUniqueTaggedMutable dst0 dstTags0 = do
   (!dst1,!dstTags1,!len) <- alignArrays dst0 dstTags0
   (!dst2,!dstTags2) <- sortTaggedMutableN len dst1 dstTags1
@@ -177,7 +177,7 @@ sortTaggedMutableN :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, 
   -> Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v)
-{-# INLINABLE sortTaggedMutableN #-}
+{-# INLINE sortTaggedMutableN #-}
 sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
   then do
     insertionSortTaggedRange dst dstTags 0 len
@@ -200,7 +200,7 @@ sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
 -- fromListN 5 [4,5,6,7,9]
 sortUnique :: (Contiguous arr, Element arr a, Ord a)
   => arr a -> arr a
-{-# INLINABLE sortUnique #-}
+{-# INLINE sortUnique #-}
 sortUnique src = runST $ do
   let len = C.size src
   dst <- C.new len
@@ -215,7 +215,7 @@ sortUnique src = runST $ do
 sortUniqueMutable :: (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a
   -> ST s (Mutable arr s a)
-{-# INLINABLE sortUniqueMutable #-}
+{-# INLINE sortUniqueMutable #-}
 sortUniqueMutable marr = do
   res <- sortMutable marr
   uniqueMutable res
@@ -225,7 +225,7 @@ sortUniqueMutable marr = do
 -- argument may not be reused after this function is applied to it.
 uniqueMutable :: forall arr s a. (Contiguous arr, Element arr a, Eq a)
   => Mutable arr s a -> ST s (Mutable arr s a)
-{-# INLINABLE uniqueMutable #-}
+{-# INLINE uniqueMutable #-}
 uniqueMutable !marr = do
   !len <- C.sizeMutable marr
   if len > 1
@@ -263,7 +263,7 @@ uniqueTaggedMutableN :: forall karr varr s k v. (Contiguous karr, Element karr k
   -> Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v)
-{-# INLINABLE uniqueTaggedMutableN #-}
+{-# INLINE uniqueTaggedMutableN #-}
 uniqueTaggedMutableN !len !marr !marrTags = if len > 1
   then do
     !a0 <- C.read marr 0
@@ -300,9 +300,11 @@ uniqueTaggedMutableN !len !marr !marrTags = if len > 1
 
 unsafeEmbedIO :: IO a -> ST s a
 unsafeEmbedIO (IO f) = ST (unsafeCoerce# f)
+{-# INLINE unsafeEmbedIO #-}
 
 half :: Int -> Int
 half x = unsafeQuot x 2
+{-# INLINE half #-}
 
 splitMergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a -- source and destination
@@ -311,7 +313,7 @@ splitMergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINABLE splitMergeParallel #-}
+{-# INLINE splitMergeParallel #-}
 splitMergeParallel !arr !work !level !start !end = if level > 1
   then if end - start < threshold
     then insertionSortRange arr start end
@@ -333,7 +335,7 @@ splitMergeParallelTagged :: forall karr varr s k v. (Contiguous karr, Element ka
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINABLE splitMergeParallelTagged #-}
+{-# INLINE splitMergeParallelTagged #-}
 splitMergeParallelTagged !arr !work !arrTags !workTags !level !start !end = if level > 1
   then do
     let !mid = unsafeQuot (end + start) 2
@@ -350,7 +352,7 @@ splitMerge :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINABLE splitMerge #-}
+{-# INLINE splitMerge #-}
 splitMerge !arr !work !start !end = if end - start < 2
   then return ()
   else if end - start > threshold
@@ -369,7 +371,7 @@ splitMergeTagged :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, El
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINABLE splitMergeTagged #-}
+{-# INLINE splitMergeTagged #-}
 splitMergeTagged !arr !work !arrTags !workTags !start !end = if end - start < 2
   then return ()
   else if end - start > thresholdTagged
@@ -389,7 +391,7 @@ mergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> Int -- middle
   -> Int -- end
   -> ST s ()
-{-# INLINABLE mergeParallel #-}
+{-# INLINE mergeParallel #-}
 mergeParallel !src !dst !threads !start !mid !end = do
   !lock <- newEmptyMVar
   let go :: Int -- previous A end
@@ -468,7 +470,7 @@ mergeParallelTagged :: forall karr varr s k v. (Contiguous karr, Element karr k,
   -> Int -- middle
   -> Int -- end
   -> ST s ()
-{-# INLINABLE mergeParallelTagged #-}
+{-# INLINE mergeParallelTagged #-}
 mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
   !lock <- newEmptyMVar
   let go :: Int -- previous A end
@@ -536,6 +538,7 @@ mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
 
 unsafeQuot :: Int -> Int -> Int
 unsafeQuot (I# a) (I# b) = I# (quotInt# a b)
+{-# INLINE unsafeQuot #-}
 
 -- If the needle is bigger than everything in the slice
 -- of the array, this returns the end index (which is out
@@ -543,7 +546,7 @@ unsafeQuot (I# a) (I# b) = I# (quotInt# a b)
 -- to handle that.
 findIndexOfGtElem :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a -> a -> Int -> Int -> ST s Int
-{-# INLINABLE findIndexOfGtElem #-}
+{-# INLINE findIndexOfGtElem #-}
 findIndexOfGtElem !v !needle !start !end = go start end
   where
   go :: Int -> Int -> ST s Int
@@ -559,7 +562,7 @@ findIndexOfGtElem !v !needle !start !end = go start end
 -- | TODO: should probably turn this into a real galloping search
 gallopToGtIndex :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a -> a -> Int -> Int -> ST s Int
-{-# INLINABLE gallopToGtIndex #-}
+{-# INLINE gallopToGtIndex #-}
 gallopToGtIndex !v !val !start !end = go start
   where
   go :: Int -> ST s Int
@@ -584,7 +587,7 @@ mergeNonContiguous :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> Int -- end B
   -> Int -- start destination
   -> ST s ()
-{-# INLINABLE mergeNonContiguous #-}
+{-# INLINE mergeNonContiguous #-}
 mergeNonContiguous !src !dst !startA !endA !startB !endB !startDst =
   if startB < endB
     then stepA startA startB startDst
@@ -627,7 +630,7 @@ mergeNonContiguousTagged :: forall karr varr k v s. (Contiguous karr, Element ka
   -> Int -- end B
   -> Int -- start destination
   -> ST s ()
-{-# INLINABLE mergeNonContiguousTagged #-}
+{-# INLINE mergeNonContiguousTagged #-}
 mergeNonContiguousTagged !src !dst !srcTags !dstTags !startA !endA !startB !endB !startDst =
   if startB < endB
     then stepA startA startB startDst
@@ -676,7 +679,7 @@ insertionSortRange :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINABLE insertionSortRange #-}
+{-# INLINE insertionSortRange #-}
 insertionSortRange !arr !start !end = go start
   where
   go :: Int -> ST s ()
@@ -693,7 +696,7 @@ insertElement :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> Int
   -> Int
   -> ST s ()
-{-# INLINABLE insertElement #-}
+{-# INLINE insertElement #-}
 insertElement !arr !a !start !end = go end
   where
   go :: Int -> ST s ()
@@ -715,7 +718,7 @@ insertionSortTaggedRange :: forall karr varr s k v. (Contiguous karr, Element ka
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINABLE insertionSortTaggedRange #-}
+{-# INLINE insertionSortTaggedRange #-}
 insertionSortTaggedRange !karr !varr !start !end = go start
   where
   go :: Int -> ST s ()
@@ -735,7 +738,7 @@ insertElementTagged :: forall karr varr s k v. (Contiguous karr, Element karr k,
   -> Int
   -> Int
   -> ST s ()
-{-# INLINABLE insertElementTagged #-}
+{-# INLINE insertElementTagged #-}
 insertElementTagged !karr !varr !a !v !start !end = go end
   where
   go :: Int -> ST s ()
