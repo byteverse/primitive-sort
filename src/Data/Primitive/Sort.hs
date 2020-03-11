@@ -25,13 +25,8 @@ module Data.Primitive.Sort
 
 import Control.Monad.ST
 import Control.Applicative
-import GHC.ST (ST(..))
-import GHC.IO (IO(..))
 import GHC.Int (Int(..))
-import Control.Monad
 import GHC.Prim
-import Data.Primitive.MVar (takeMVar,putMVar,newEmptyMVar)
-import Control.Concurrent (getNumCapabilities)
 import Data.Primitive.Contiguous (Contiguous,Mutable,Element)
 import qualified Data.Primitive.Contiguous as C
 
@@ -118,16 +113,7 @@ sortMutable !dst = do
     else do
       work <- C.new len
       C.copyMutable work 0 dst 0 len 
-      caps <- unsafeEmbedIO getNumCapabilities
-      let minElemsPerThread = 20000
-          maxThreads = unsafeQuot len minElemsPerThread
-          preThreads = min caps maxThreads
-          threads = if preThreads == 1 then 1 else preThreads * 8
-      -- I cannot understand why, but GHC's runtime does better
-      -- when we let this schedule 8 times as many threads as
-      -- we have capabilities. However, we only get this benefit
-      -- when we actually have more than one capability.
-      splitMergeParallel dst work threads 0 len
+      splitMerge dst work 0 len
   return dst
 
 -- | Sort an array of a key type @k@, rearranging the values of
@@ -185,12 +171,7 @@ sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
   else do
     work <- C.cloneMutable dst 0 len 
     workTags <- C.cloneMutable dstTags 0 len 
-    caps <- unsafeEmbedIO getNumCapabilities
-    let minElemsPerThread = 20000
-        maxThreads = unsafeQuot len minElemsPerThread
-        preThreads = min caps maxThreads
-        threads = if preThreads == 1 then 1 else preThreads * 8
-    splitMergeParallelTagged dst work dstTags workTags threads 0 len
+    splitMergeTagged dst work dstTags workTags 0 len
     return (dst,dstTags)
 
 -- | Sort an immutable array. Only a single copy of each duplicated
@@ -298,54 +279,6 @@ uniqueTaggedMutableN !len !marr !marrTags = if len > 1
         liftA2 (,) (C.resize marr reducedLen) (C.resize marrTags reducedLen)
   else return (marr,marrTags)
 
-unsafeEmbedIO :: IO a -> ST s a
-unsafeEmbedIO (IO f) = ST (unsafeCoerce# f)
-{-# INLINE unsafeEmbedIO #-}
-
-half :: Int -> Int
-half x = unsafeQuot x 2
-{-# INLINE half #-}
-
-splitMergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
-  => Mutable arr s a -- source and destination
-  -> Mutable arr s a -- work array
-  -> Int -- spark limit, should be power of two
-  -> Int -- start
-  -> Int -- end
-  -> ST s ()
-{-# INLINE splitMergeParallel #-}
-splitMergeParallel !arr !work !level !start !end = if level > 1
-  then if end - start < threshold
-    then insertionSortRange arr start end
-    else do
-      let !mid = unsafeQuot (end + start) 2
-          !levelDown = half level
-      tandem 
-        (splitMergeParallel work arr levelDown start mid)
-        (splitMergeParallel work arr levelDown mid end)
-      mergeParallel work arr level start mid end
-  else splitMerge arr work start end
-
-splitMergeParallelTagged :: forall karr varr s k v. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
-  => Mutable karr s k -- source and destination
-  -> Mutable karr s k -- work array
-  -> Mutable varr s v -- source and destination tags
-  -> Mutable varr s v -- work tags
-  -> Int -- spark limit, should be power of two
-  -> Int -- start
-  -> Int -- end
-  -> ST s ()
-{-# INLINE splitMergeParallelTagged #-}
-splitMergeParallelTagged !arr !work !arrTags !workTags !level !start !end = if level > 1
-  then do
-    let !mid = unsafeQuot (end + start) 2
-        !levelDown = half level
-    tandem 
-      (splitMergeParallelTagged work arr workTags arrTags levelDown start mid)
-      (splitMergeParallelTagged work arr workTags arrTags levelDown mid end)
-    mergeParallelTagged work arr workTags arrTags level start mid end
-  else splitMergeTagged arr work arrTags workTags start end
-
 splitMerge :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   => Mutable arr s a -- source and destination
   -> Mutable arr s a -- work array
@@ -382,197 +315,9 @@ splitMergeTagged !arr !work !arrTags !workTags !start !end = if end - start < 2
       mergeNonContiguousTagged work arr workTags arrTags start mid mid end start
     else insertionSortTaggedRange arr arrTags start end
 
--- Precondition: threads is greater than 0
-mergeParallel :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
-  => Mutable arr s a -- source
-  -> Mutable arr s a -- dest
-  -> Int -- threads
-  -> Int -- start
-  -> Int -- middle
-  -> Int -- end
-  -> ST s ()
-{-# INLINE mergeParallel #-}
-mergeParallel !src !dst !threads !start !mid !end = do
-  !lock <- newEmptyMVar
-  let go :: Int -- previous A end
-         -> Int -- previous B end
-         -> Int -- how many chunk have we already iterated over
-         -> ST s Int
-      go !prevEndA !prevEndB !ix = 
-        if | prevEndA == mid && prevEndB == end -> return ix
-           | prevEndA == mid -> do
-               forkST_ $ do
-                 let !startA = mid
-                     !endA = mid
-                     !startB = prevEndB
-                     !endB = end
-                     !startDst = (startA - start) + (startB - mid) + start
-                 mergeNonContiguous src dst startA endA startB endB startDst
-                 putMVar lock ()
-               go mid end (ix + 1)
-           | prevEndB == end -> do
-               forkST_ $ do
-                 let !startA = prevEndA
-                     !endA = mid
-                     !startB = end
-                     !endB = end
-                     !startDst = (startA - start) + (startB - mid) + start
-                 mergeNonContiguous src dst startA endA startB endB startDst
-                 putMVar lock ()
-               go mid end (ix + 1)
-           | ix == threads - 1 -> do
-               forkST_ $ do
-                 let !startA = prevEndA
-                     !endA = mid
-                     !startB = prevEndB
-                     !endB = end
-                     !startDst = (startA - start) + (startB - mid) + start
-                 mergeNonContiguous src dst startA endA startB endB startDst
-                 putMVar lock ()
-               return (ix + 1)
-           | otherwise -> do
-               -- We use the left half for this lookup. We could instead
-               -- use both halves and take the median.
-               !endElem <- C.read src (start + chunk * (ix + 1))
-               !endA <- findIndexOfGtElem src (endElem :: a) prevEndA mid
-               !endB <- findIndexOfGtElem src endElem prevEndB end
-               forkST_ $ do
-                 let !startA = prevEndA
-                     !startB = prevEndB
-                     !startDst = (startA - start) + (startB - mid) + start
-                 mergeNonContiguous src dst startA endA startB endB startDst
-                 putMVar lock ()
-               go endA endB (ix + 1)
-  !endElem <- C.read src (start + chunk) 
-  !endA <- findIndexOfGtElem src (endElem :: a) start mid
-  !endB <- findIndexOfGtElem src endElem mid end
-  forkST_ $ do
-    let !startA = start
-        !startB = mid
-        !startDst = (startA - start) + (startB - mid) + start
-    mergeNonContiguous src dst startA endA startB endB startDst
-    putMVar lock ()
-  total <- go endA endB 1
-  replicateM_ total (takeMVar lock)
-  where
-  !chunk = unsafeQuot (end - start) threads
-
--- Precondition: threads is greater than 0
--- This function is just a copy of mergeParallel but with
--- the tags arrays passed to mergeNonContiguousTagged
-mergeParallelTagged :: forall karr varr s k v. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
-  => Mutable karr s k -- source
-  -> Mutable karr s k -- dest
-  -> Mutable varr s v -- source tags
-  -> Mutable varr s v -- dest tags
-  -> Int -- threads
-  -> Int -- start
-  -> Int -- middle
-  -> Int -- end
-  -> ST s ()
-{-# INLINE mergeParallelTagged #-}
-mergeParallelTagged !src !dst !srcTags !dstTags !threads !start !mid !end = do
-  !lock <- newEmptyMVar
-  let go :: Int -- previous A end
-         -> Int -- previous B end
-         -> Int -- how many chunk have we already iterated over
-         -> ST s Int
-      go !prevEndA !prevEndB !ix = 
-        if | prevEndA == mid && prevEndB == end -> return ix
-           | prevEndA == mid -> do
-               forkST_ $ do
-                 let !startA = mid
-                     !endA = mid
-                     !startB = prevEndB
-                     !endB = end
-                     !startDst = (startA - start) + (startB - mid) + start
-                 mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-                 putMVar lock ()
-               go mid end (ix + 1)
-           | prevEndB == end -> do
-               forkST_ $ do
-                 let !startA = prevEndA
-                     !endA = mid
-                     !startB = end
-                     !endB = end
-                     !startDst = (startA - start) + (startB - mid) + start
-                 mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-                 putMVar lock ()
-               go mid end (ix + 1)
-           | ix == threads - 1 -> do
-               forkST_ $ do
-                 let !startA = prevEndA
-                     !endA = mid
-                     !startB = prevEndB
-                     !endB = end
-                     !startDst = (startA - start) + (startB - mid) + start
-                 mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-                 putMVar lock ()
-               return (ix + 1)
-           | otherwise -> do
-               -- We use the left half for this lookup. We could instead
-               -- use both halves and take the median.
-               !endElem <- C.read src (start + chunk * (ix + 1))
-               !endA <- findIndexOfGtElem src (endElem :: k) prevEndA mid
-               !endB <- findIndexOfGtElem src endElem prevEndB end
-               forkST_ $ do
-                 let !startA = prevEndA
-                     !startB = prevEndB
-                     !startDst = (startA - start) + (startB - mid) + start
-                 mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-                 putMVar lock ()
-               go endA endB (ix + 1)
-  !endElem <- C.read src (start + chunk) 
-  !endA <- findIndexOfGtElem src (endElem :: k) start mid
-  !endB <- findIndexOfGtElem src endElem mid end
-  forkST_ $ do
-    let !startA = start
-        !startB = mid
-        !startDst = (startA - start) + (startB - mid) + start
-    mergeNonContiguousTagged src dst srcTags dstTags startA endA startB endB startDst
-    putMVar lock ()
-  total <- go endA endB 1
-  replicateM_ total (takeMVar lock)
-  where
-  !chunk = unsafeQuot (end - start) threads
-
 unsafeQuot :: Int -> Int -> Int
 unsafeQuot (I# a) (I# b) = I# (quotInt# a b)
 {-# INLINE unsafeQuot #-}
-
--- If the needle is bigger than everything in the slice
--- of the array, this returns the end index (which is out
--- of bounds). Callers of this function should be able
--- to handle that.
-findIndexOfGtElem :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
-  => Mutable arr s a -> a -> Int -> Int -> ST s Int
-{-# INLINE findIndexOfGtElem #-}
-findIndexOfGtElem !v !needle !start !end = go start end
-  where
-  go :: Int -> Int -> ST s Int
-  go !lo !hi = if lo < hi
-    then do
-      let !mid = lo + half (hi - lo)
-      !val <- C.read v mid
-      if | val == needle -> gallopToGtIndex v needle (mid + 1) hi
-         | val < needle -> go (mid + 1) hi
-         | otherwise -> go lo mid
-    else return lo
-
--- | TODO: should probably turn this into a real galloping search
-gallopToGtIndex :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
-  => Mutable arr s a -> a -> Int -> Int -> ST s Int
-{-# INLINE gallopToGtIndex #-}
-gallopToGtIndex !v !val !start !end = go start
-  where
-  go :: Int -> ST s Int
-  go !ix = if ix < end
-    then do
-      !a <- C.read v ix
-      if a > val
-        then return ix
-        else go (ix + 1)
-    else return end
 
 -- stepA assumes that we previously incremented ixA.
 -- Consequently, we do not need to check that ixB
@@ -757,24 +502,6 @@ insertElementTagged !karr !varr !a !v !start !end = go end
       C.write karr ix a
       C.copyMutable varr (ix + 1) varr ix (end - ix)
       C.write varr ix v
-
-
-forkST_ :: ST s a -> ST s ()
-forkST_ action = ST $ \s1 -> case forkST# action s1 of
-  (# s2, _ #) -> (# s2, () #)
-
-forkST# :: a -> State# s -> (# State# s, ThreadId# #)
-forkST# = unsafeCoerce# fork#
-
--- | Execute the first computation on the main thread and
---   the second one on another thread in parallel. Blocks
---   until both are finished.
-tandem :: ST s () -> ST s () -> ST s ()
-tandem a b = do
-  lock <- newEmptyMVar
-  forkST_ (b >> putMVar lock ())
-  a
-  takeMVar lock
 
 -- $setup
 --
