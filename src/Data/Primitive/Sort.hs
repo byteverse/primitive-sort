@@ -27,7 +27,7 @@ import Control.Monad.ST
 import Control.Applicative
 import GHC.Int (Int(..))
 import GHC.Prim
-import Data.Primitive.Contiguous (Contiguous,Mutable,Element)
+import Data.Primitive.Contiguous (Contiguous,ContiguousU,Mutable,Element)
 import qualified Data.Primitive.Contiguous as C
 
 -- | Sort an immutable array. Duplicate elements are preserved.
@@ -41,7 +41,7 @@ sort :: (Contiguous arr, Element arr a, Ord a)
 sort !src = runST $ do
   let len = C.size src
   dst <- C.new (C.size src)
-  C.copy dst 0 src 0 len
+  C.copy dst 0 (C.slice src 0 len)
   res <- sortMutable dst
   C.unsafeFreeze res
 
@@ -65,9 +65,9 @@ sortTagged :: forall k v karr varr. (Contiguous karr, Element karr k, Ord k, Con
 sortTagged !src !srcTags = runST $ do
   let len = min (C.size src) (C.size srcTags)
   dst <- C.new len
-  C.copy dst 0 src 0 len
+  C.copy dst 0 (C.slice src 0 len)
   dstTags <- C.new len
-  C.copy dstTags 0 srcTags 0 len
+  C.copy dstTags 0 (C.slice srcTags 0 len)
   (res,resTags) <- sortTaggedMutableN len dst dstTags
   res' <- C.unsafeFreeze res
   resTags' <- C.unsafeFreeze resTags
@@ -81,7 +81,7 @@ sortTagged !src !srcTags = runST $ do
 --
 -- >>> sortUniqueTagged ([5,6,7,5,5,7] :: Array Int) ([1,2,3,4,5,6] :: Array Int)
 -- (fromListN 3 [5,6,7],fromListN 3 [5,2,6])
-sortUniqueTagged :: forall k v karr varr. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
+sortUniqueTagged :: forall k v karr varr. (ContiguousU karr, Element karr k, Ord k, ContiguousU varr, Element varr v)
   => karr k -- ^ keys
   -> varr v -- ^ values
   -> (karr k,varr v)
@@ -89,9 +89,9 @@ sortUniqueTagged :: forall k v karr varr. (Contiguous karr, Element karr k, Ord 
 sortUniqueTagged !src !srcTags = runST $ do
   let len = min (C.size src) (C.size srcTags)
   dst <- C.new len
-  C.copy dst 0 src 0 len
+  C.copy dst 0 (C.slice src 0 len)
   dstTags <- C.new len
-  C.copy dstTags 0 srcTags 0 len
+  C.copy dstTags 0 (C.slice srcTags 0 len)
   (res0,resTags0) <- sortTaggedMutableN len dst dstTags
   (res1,resTags1) <- uniqueTaggedMutableN len res0 resTags0
   res' <- C.unsafeFreeze res1
@@ -107,12 +107,12 @@ sortMutable :: (Contiguous arr, Element arr a, Ord a)
   -> ST s (Mutable arr s a)
 {-# INLINE sortMutable #-}
 sortMutable !dst = do
-  len <- C.sizeMutable dst
+  len <- C.sizeMut dst
   if len < threshold
     then insertionSortRange dst 0 len
     else do
       work <- C.new len
-      C.copyMutable work 0 dst 0 len 
+      C.copyMut work 0 (C.sliceMut dst 0 len)
       splitMerge dst work 0 len
   return dst
 
@@ -120,7 +120,7 @@ sortMutable !dst = do
 -- type @v@ according to the element they correspond to in the
 -- key array. The argument arrays may not be reused after they
 -- are passed to the function.
-sortTaggedMutable :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
+sortTaggedMutable :: (ContiguousU karr, Element karr k, Ord k, ContiguousU varr, Element varr v)
   => Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v)
@@ -129,14 +129,14 @@ sortTaggedMutable !dst0 !dstTags0 = do
   (!dst,!dstTags,!len) <- alignArrays dst0 dstTags0
   sortTaggedMutableN len dst dstTags
 
-alignArrays :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
+alignArrays :: (ContiguousU karr, Element karr k, Ord k, ContiguousU varr, Element varr v)
   => Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v,Int)
 {-# INLINE alignArrays #-}
 alignArrays dst0 dstTags0 = do
-  lenDst <- C.sizeMutable dst0
-  lenDstTags <- C.sizeMutable dstTags0
+  lenDst <- C.sizeMut dst0
+  lenDstTags <- C.sizeMut dstTags0
   -- This cleans up mismatched lengths.
   if lenDst == lenDstTags
     then return (dst0,dstTags0,lenDst)
@@ -148,7 +148,7 @@ alignArrays dst0 dstTags0 = do
         dst <- C.resize dst0 lenDstTags
         return (dst,dstTags0,lenDstTags)
 
-sortUniqueTaggedMutable :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
+sortUniqueTaggedMutable :: (ContiguousU karr, Element karr k, Ord k, ContiguousU varr, Element varr v)
   => Mutable karr s k -- ^ keys
   -> Mutable varr s v -- ^ values
   -> ST s (Mutable karr s k, Mutable varr s v)
@@ -169,8 +169,8 @@ sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
     insertionSortTaggedRange dst dstTags 0 len
     return (dst,dstTags)
   else do
-    work <- C.cloneMutable dst 0 len 
-    workTags <- C.cloneMutable dstTags 0 len 
+    work <- C.cloneMut (C.sliceMut dst 0 len)
+    workTags <- C.cloneMut (C.sliceMut dstTags 0 len)
     splitMergeTagged dst work dstTags workTags 0 len
     return (dst,dstTags)
 
@@ -179,13 +179,13 @@ sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
 --
 -- >>> sortUnique ([5,6,7,9,5,4,5,7] :: Array Int)
 -- fromListN 5 [4,5,6,7,9]
-sortUnique :: (Contiguous arr, Element arr a, Ord a)
+sortUnique :: (ContiguousU arr, Element arr a, Ord a)
   => arr a -> arr a
 {-# INLINE sortUnique #-}
 sortUnique src = runST $ do
   let len = C.size src
   dst <- C.new len
-  C.copy dst 0 src 0 len
+  C.copy dst 0 (C.slice src 0 len)
   res <- sortUniqueMutable dst
   C.unsafeFreeze res
 
@@ -193,7 +193,7 @@ sortUnique src = runST $ do
 -- element is preserved. This operation may run in-place, or it may
 -- need to allocate a new array, so the argument may not be reused
 -- after this function is applied to it. 
-sortUniqueMutable :: (Contiguous arr, Element arr a, Ord a)
+sortUniqueMutable :: (ContiguousU arr, Element arr a, Ord a)
   => Mutable arr s a
   -> ST s (Mutable arr s a)
 {-# INLINE sortUniqueMutable #-}
@@ -204,11 +204,11 @@ sortUniqueMutable marr = do
 -- | Discards adjacent equal elements from an array. This operation
 -- may run in-place, or it may need to allocate a new array, so the
 -- argument may not be reused after this function is applied to it.
-uniqueMutable :: forall arr s a. (Contiguous arr, Element arr a, Eq a)
+uniqueMutable :: forall arr s a. (ContiguousU arr, Element arr a, Eq a)
   => Mutable arr s a -> ST s (Mutable arr s a)
 {-# INLINE uniqueMutable #-}
 uniqueMutable !marr = do
-  !len <- C.sizeMutable marr
+  !len <- C.sizeMut marr
   if len > 1
     then do
       !a0 <- C.read marr 0
@@ -239,7 +239,7 @@ uniqueMutable !marr = do
           C.resize marr reducedLen
     else return marr
 
-uniqueTaggedMutableN :: forall karr varr s k v. (Contiguous karr, Element karr k, Eq k, Contiguous varr, Element varr v)
+uniqueTaggedMutableN :: forall karr varr s k v. (ContiguousU karr, Element karr k, Eq k, ContiguousU varr, Element varr v)
   => Int
   -> Mutable karr s k
   -> Mutable varr s v
@@ -360,9 +360,9 @@ mergeNonContiguous !src !dst !startA !endA !startB !endB !startDst =
     then continue ixA ixB ixDst
     else finishB ixB ixDst
   finishB :: Int -> Int -> ST s ()
-  finishB !ixB !ixDst = C.copyMutable dst ixDst src ixB (endB - ixB)
+  finishB !ixB !ixDst = C.copyMut dst ixDst (C.sliceMut src ixB (endB - ixB))
   finishA :: Int -> Int -> ST s ()
-  finishA !ixA !ixDst = C.copyMutable dst ixDst src ixA (endA - ixA)
+  finishA !ixA !ixDst = C.copyMut dst ixDst (C.sliceMut src ixA (endA - ixA))
 
 mergeNonContiguousTagged :: forall karr varr k v s. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
   => Mutable karr s k -- source
@@ -406,12 +406,12 @@ mergeNonContiguousTagged !src !dst !srcTags !dstTags !startA !endA !startB !endB
     else finishB ixB ixDst
   finishB :: Int -> Int -> ST s ()
   finishB !ixB !ixDst = do
-    C.copyMutable dst ixDst src ixB (endB - ixB)
-    C.copyMutable dstTags ixDst srcTags ixB (endB - ixB)
+    C.copyMut dst ixDst (C.sliceMut src ixB (endB - ixB))
+    C.copyMut dstTags ixDst (C.sliceMut srcTags ixB (endB - ixB))
   finishA :: Int -> Int -> ST s ()
   finishA !ixA !ixDst = do
-    C.copyMutable dst ixDst src ixA (endA - ixA)
-    C.copyMutable dstTags ixDst srcTags ixA (endA - ixA)
+    C.copyMut dst ixDst (C.sliceMut src ixA (endA - ixA))
+    C.copyMut dstTags ixDst (C.sliceMut srcTags ixA (endA - ixA))
 
 threshold :: Int
 threshold = 16
@@ -450,11 +450,11 @@ insertElement !arr !a !start !end = go end
       !b <- C.read arr (ix - 1)
       if b <= a
         then do
-          C.copyMutable arr (ix + 1) arr ix (end - ix)
+          C.copyMut arr (ix + 1) (C.sliceMut arr ix (end - ix))
           C.write arr ix a
         else go (ix - 1)
     else do
-      C.copyMutable arr (ix + 1) arr ix (end - ix)
+      C.copyMut arr (ix + 1) (C.sliceMut arr ix (end - ix))
       C.write arr ix a
 
 insertionSortTaggedRange :: forall karr varr s k v. (Contiguous karr, Element karr k, Ord k, Contiguous varr, Element varr v)
@@ -492,15 +492,15 @@ insertElementTagged !karr !varr !a !v !start !end = go end
       !b <- C.read karr (ix - 1)
       if b <= a
         then do
-          C.copyMutable karr (ix + 1) karr ix (end - ix)
+          C.copyMut karr (ix + 1) (C.sliceMut karr ix (end - ix))
           C.write karr ix a
-          C.copyMutable varr (ix + 1) varr ix (end - ix)
+          C.copyMut varr (ix + 1) (C.sliceMut varr ix (end - ix))
           C.write varr ix v
         else go (ix - 1)
     else do
-      C.copyMutable karr (ix + 1) karr ix (end - ix)
+      C.copyMut karr (ix + 1) (C.sliceMut karr ix (end - ix))
       C.write karr ix a
-      C.copyMutable varr (ix + 1) varr ix (end - ix)
+      C.copyMut varr (ix + 1) (C.sliceMut varr ix (end - ix))
       C.write varr ix v
 
 -- $setup
