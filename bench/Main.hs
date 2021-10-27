@@ -20,8 +20,8 @@ import qualified GHC.Exts as E
 main :: IO ()
 main = defaultMain
   [ bgroup "contiguous"
-    [ benchType (typeRep :: TypeRep Int8) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Int8 . byteArrayToPrimArray)
-    , benchType (typeRep :: TypeRep Word) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Word . byteArrayToPrimArray)
+    [ benchType (typeRep :: TypeRep Int8) (primArrayToByteArray . sortInt8 . byteArrayToPrimArray)
+    , benchType (typeRep :: TypeRep Word) (primArrayToByteArray . sortWord . byteArrayToPrimArray)
     ]
   , bgroup "tagged-unique"
     [ bench "mini" (whnf (\(k,v) -> evalPair (Data.Primitive.Sort.sortUniqueTagged k v)) (sizedInts Mini, sizedInts Mini))
@@ -29,6 +29,17 @@ main = defaultMain
     , bench "small" (whnf (\(k,v) -> evalPair (Data.Primitive.Sort.sortUniqueTagged k v)) (sizedInts Small, sizedInts Small))
     ]
   ]
+
+-- It is useful to have this here with inlining disabled because it
+-- makes it easy to inspect Core to see if GHC's specialization is
+-- working like we expect it to.
+sortInt8 :: PrimArray Int8 -> PrimArray Int8
+{-# noinline sortInt8 #-}
+sortInt8 !x = Data.Primitive.Sort.sort @Int8 x
+
+sortWord :: PrimArray Word -> PrimArray Word
+{-# noinline sortWord #-}
+sortWord !x = Data.Primitive.Sort.sort @Word x
 
 evalPair :: (PrimArray a, PrimArray b) -> ()
 evalPair (!_,!_) = ()

@@ -3,9 +3,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MagicHash #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UnboxedTuples #-}
-
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Sort primitive arrays with a stable sorting algorithm. All functions
 -- in this module are marked as @INLINABLE@, so they will specialize
@@ -27,17 +26,31 @@ import Control.Monad.ST
 import Control.Applicative
 import GHC.Int (Int(..))
 import GHC.Prim
+import Data.Word
+import Data.Int
 import Data.Primitive.Contiguous (Contiguous,ContiguousU,Mutable,Element)
+import Data.Primitive (Prim,PrimArray,MutablePrimArray)
 import qualified Data.Primitive.Contiguous as C
 
 -- | Sort an immutable array. Duplicate elements are preserved.
 --
 -- >>> sort ([5,6,7,9,5,4,5,7] :: Array Int)
 -- fromListN 8 [4,5,5,5,6,7,7,9]
-sort :: (Contiguous arr, Element arr a, Ord a)
-  => arr a
-  -> arr a
-{-# INLINE sort #-}
+sort :: (Prim a, Ord a)
+  => C.PrimArray a
+  -> C.PrimArray a
+{-# inlineable sort #-}
+{-# specialize sort :: C.PrimArray Double -> C.PrimArray Double #-}
+{-# specialize sort :: C.PrimArray Int -> C.PrimArray Int #-}
+{-# specialize sort :: C.PrimArray Int64 -> C.PrimArray Int64 #-}
+{-# specialize sort :: C.PrimArray Int32 -> C.PrimArray Int32 #-}
+{-# specialize sort :: C.PrimArray Int16 -> C.PrimArray Int16 #-}
+{-# specialize sort :: C.PrimArray Int8 -> C.PrimArray Int8 #-}
+{-# specialize sort :: C.PrimArray Word -> C.PrimArray Word #-}
+{-# specialize sort :: C.PrimArray Word64 -> C.PrimArray Word64 #-}
+{-# specialize sort :: C.PrimArray Word32 -> C.PrimArray Word32 #-}
+{-# specialize sort :: C.PrimArray Word16 -> C.PrimArray Word16 #-}
+{-# specialize sort :: C.PrimArray Word8 -> C.PrimArray Word8 #-}
 sort !src = runST $ do
   let len = C.size src
   dst <- C.new (C.size src)
@@ -61,7 +74,7 @@ sortTagged :: forall k v karr varr. (Contiguous karr, Element karr k, Ord k, Con
   => karr k -- ^ keys
   -> varr v -- ^ values
   -> (karr k,varr v)
-{-# INLINE sortTagged #-}
+{-# inlineable sortTagged #-}
 sortTagged !src !srcTags = runST $ do
   let len = min (C.size src) (C.size srcTags)
   dst <- C.new len
@@ -85,7 +98,7 @@ sortUniqueTagged :: forall k v karr varr. (ContiguousU karr, Element karr k, Ord
   => karr k -- ^ keys
   -> varr v -- ^ values
   -> (karr k,varr v)
-{-# INLINE sortUniqueTagged #-}
+{-# inlineable sortUniqueTagged #-}
 sortUniqueTagged !src !srcTags = runST $ do
   let len = min (C.size src) (C.size srcTags)
   dst <- C.new len
@@ -102,10 +115,21 @@ sortUniqueTagged !src !srcTags = runST $ do
 -- elements. The argument may either be modified in-place, or another
 -- array may be allocated and returned. The argument
 -- may not be reused after being passed to this function.
-sortMutable :: (Contiguous arr, Element arr a, Ord a)
-  => Mutable arr s a
-  -> ST s (Mutable arr s a)
-{-# INLINE sortMutable #-}
+sortMutable :: (Prim a, Ord a)
+  => MutablePrimArray s a
+  -> ST s (MutablePrimArray s a)
+{-# inlineable sortMutable #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Double -> ST s (C.MutablePrimArray s Double) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Int -> ST s (C.MutablePrimArray s Int) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Int64 -> ST s (C.MutablePrimArray s Int64) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Int32 -> ST s (C.MutablePrimArray s Int32) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Int16 -> ST s (C.MutablePrimArray s Int16) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Int8 -> ST s (C.MutablePrimArray s Int8) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Word -> ST s (C.MutablePrimArray s Word) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Word64 -> ST s (C.MutablePrimArray s Word64) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Word32 -> ST s (C.MutablePrimArray s Word32) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Word16 -> ST s (C.MutablePrimArray s Word16) #-}
+{-# specialize sortMutable :: forall s. C.MutablePrimArray s Word8 -> ST s (C.MutablePrimArray s Word8) #-}
 sortMutable !dst = do
   len <- C.sizeMut dst
   if len < threshold
@@ -124,7 +148,7 @@ sortTaggedMutable :: (ContiguousU karr, Element karr k, Ord k, ContiguousU varr,
   => Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v)
-{-# INLINE sortTaggedMutable #-}
+{-# inlineable sortTaggedMutable #-}
 sortTaggedMutable !dst0 !dstTags0 = do
   (!dst,!dstTags,!len) <- alignArrays dst0 dstTags0
   sortTaggedMutableN len dst dstTags
@@ -133,7 +157,7 @@ alignArrays :: (ContiguousU karr, Element karr k, Ord k, ContiguousU varr, Eleme
   => Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v,Int)
-{-# INLINE alignArrays #-}
+{-# inlineable alignArrays #-}
 alignArrays dst0 dstTags0 = do
   lenDst <- C.sizeMut dst0
   lenDstTags <- C.sizeMut dstTags0
@@ -152,7 +176,7 @@ sortUniqueTaggedMutable :: (ContiguousU karr, Element karr k, Ord k, ContiguousU
   => Mutable karr s k -- ^ keys
   -> Mutable varr s v -- ^ values
   -> ST s (Mutable karr s k, Mutable varr s v)
-{-# INLINE sortUniqueTaggedMutable #-}
+{-# inlineable sortUniqueTaggedMutable #-}
 sortUniqueTaggedMutable dst0 dstTags0 = do
   (!dst1,!dstTags1,!len) <- alignArrays dst0 dstTags0
   (!dst2,!dstTags2) <- sortTaggedMutableN len dst1 dstTags1
@@ -163,7 +187,7 @@ sortTaggedMutableN :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, 
   -> Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v)
-{-# INLINE sortTaggedMutableN #-}
+{-# inlineable sortTaggedMutableN #-}
 sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
   then do
     insertionSortTaggedRange dst dstTags 0 len
@@ -179,9 +203,19 @@ sortTaggedMutableN !len !dst !dstTags = if len < thresholdTagged
 --
 -- >>> sortUnique ([5,6,7,9,5,4,5,7] :: Array Int)
 -- fromListN 5 [4,5,6,7,9]
-sortUnique :: (ContiguousU arr, Element arr a, Ord a)
-  => arr a -> arr a
-{-# INLINE sortUnique #-}
+sortUnique :: (Prim a, Ord a) => PrimArray a -> PrimArray a
+{-# inlineable sortUnique #-}
+{-# specialize sortUnique :: C.PrimArray Double -> C.PrimArray Double #-}
+{-# specialize sortUnique :: C.PrimArray Int -> C.PrimArray Int #-}
+{-# specialize sortUnique :: C.PrimArray Int64 -> C.PrimArray Int64 #-}
+{-# specialize sortUnique :: C.PrimArray Int32 -> C.PrimArray Int32 #-}
+{-# specialize sortUnique :: C.PrimArray Int16 -> C.PrimArray Int16 #-}
+{-# specialize sortUnique :: C.PrimArray Int8 -> C.PrimArray Int8 #-}
+{-# specialize sortUnique :: C.PrimArray Word -> C.PrimArray Word #-}
+{-# specialize sortUnique :: C.PrimArray Word64 -> C.PrimArray Word64 #-}
+{-# specialize sortUnique :: C.PrimArray Word32 -> C.PrimArray Word32 #-}
+{-# specialize sortUnique :: C.PrimArray Word16 -> C.PrimArray Word16 #-}
+{-# specialize sortUnique :: C.PrimArray Word8 -> C.PrimArray Word8 #-}
 sortUnique src = runST $ do
   let len = C.size src
   dst <- C.new len
@@ -193,10 +227,21 @@ sortUnique src = runST $ do
 -- element is preserved. This operation may run in-place, or it may
 -- need to allocate a new array, so the argument may not be reused
 -- after this function is applied to it. 
-sortUniqueMutable :: (ContiguousU arr, Element arr a, Ord a)
-  => Mutable arr s a
-  -> ST s (Mutable arr s a)
-{-# INLINE sortUniqueMutable #-}
+sortUniqueMutable :: forall s a. (Prim a, Ord a)
+  => MutablePrimArray s a
+  -> ST s (MutablePrimArray s a)
+{-# inlineable sortUniqueMutable #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Double -> ST s (C.MutablePrimArray s Double) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Int -> ST s (C.MutablePrimArray s Int) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Int64 -> ST s (C.MutablePrimArray s Int64) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Int32 -> ST s (C.MutablePrimArray s Int32) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Int16 -> ST s (C.MutablePrimArray s Int16) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Int8 -> ST s (C.MutablePrimArray s Int8) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Word -> ST s (C.MutablePrimArray s Word) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Word64 -> ST s (C.MutablePrimArray s Word64) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Word32 -> ST s (C.MutablePrimArray s Word32) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Word16 -> ST s (C.MutablePrimArray s Word16) #-}
+{-# specialize sortUniqueMutable :: forall s. C.MutablePrimArray s Word8 -> ST s (C.MutablePrimArray s Word8) #-}
 sortUniqueMutable marr = do
   res <- sortMutable marr
   uniqueMutable res
@@ -206,7 +251,7 @@ sortUniqueMutable marr = do
 -- argument may not be reused after this function is applied to it.
 uniqueMutable :: forall arr s a. (ContiguousU arr, Element arr a, Eq a)
   => Mutable arr s a -> ST s (Mutable arr s a)
-{-# INLINE uniqueMutable #-}
+{-# inlineable uniqueMutable #-}
 uniqueMutable !marr = do
   !len <- C.sizeMut marr
   if len > 1
@@ -244,7 +289,7 @@ uniqueTaggedMutableN :: forall karr varr s k v. (ContiguousU karr, Element karr 
   -> Mutable karr s k
   -> Mutable varr s v
   -> ST s (Mutable karr s k, Mutable varr s v)
-{-# INLINE uniqueTaggedMutableN #-}
+{-# inlineable uniqueTaggedMutableN #-}
 uniqueTaggedMutableN !len !marr !marrTags = if len > 1
   then do
     !a0 <- C.read marr 0
@@ -279,13 +324,24 @@ uniqueTaggedMutableN !len !marr !marrTags = if len > 1
         liftA2 (,) (C.resize marr reducedLen) (C.resize marrTags reducedLen)
   else return (marr,marrTags)
 
-splitMerge :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
-  => Mutable arr s a -- source and destination
-  -> Mutable arr s a -- work array
+splitMerge :: forall s a. (Prim a, Ord a)
+  => MutablePrimArray s a -- source and destination
+  -> MutablePrimArray s a -- work array
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINE splitMerge #-}
+{-# inlineable splitMerge #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Double -> C.MutablePrimArray s Double -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Int -> C.MutablePrimArray s Int -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Int64 -> C.MutablePrimArray s Int64 -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Int32 -> C.MutablePrimArray s Int32 -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Int16 -> C.MutablePrimArray s Int16 -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Int8 -> C.MutablePrimArray s Int8 -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Word -> C.MutablePrimArray s Word -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Word64 -> C.MutablePrimArray s Word64 -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Word32 -> C.MutablePrimArray s Word32 -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Word16 -> C.MutablePrimArray s Word16 -> Int -> Int -> ST s () #-}
+{-# specialize splitMerge :: forall s. C.MutablePrimArray s Word8 -> C.MutablePrimArray s Word8 -> Int -> Int -> ST s () #-}
 splitMerge !arr !work !start !end = if end - start < 2
   then return ()
   else if end - start > threshold
@@ -304,7 +360,7 @@ splitMergeTagged :: (Contiguous karr, Element karr k, Ord k, Contiguous varr, El
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINE splitMergeTagged #-}
+{-# inlineable splitMergeTagged #-}
 splitMergeTagged !arr !work !arrTags !workTags !start !end = if end - start < 2
   then return ()
   else if end - start > thresholdTagged
@@ -317,7 +373,7 @@ splitMergeTagged !arr !work !arrTags !workTags !start !end = if end - start < 2
 
 unsafeQuot :: Int -> Int -> Int
 unsafeQuot (I# a) (I# b) = I# (quotInt# a b)
-{-# INLINE unsafeQuot #-}
+{-# inline unsafeQuot #-}
 
 -- stepA assumes that we previously incremented ixA.
 -- Consequently, we do not need to check that ixB
@@ -332,7 +388,17 @@ mergeNonContiguous :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> Int -- end B
   -> Int -- start destination
   -> ST s ()
-{-# INLINE mergeNonContiguous #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Double -> C.MutablePrimArray s Double -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Int -> C.MutablePrimArray s Int -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Int64 -> C.MutablePrimArray s Int64 -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Int32 -> C.MutablePrimArray s Int32 -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Int16 -> C.MutablePrimArray s Int16 -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Int8 -> C.MutablePrimArray s Int8 -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Word -> C.MutablePrimArray s Word -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Word64 -> C.MutablePrimArray s Word64 -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Word32 -> C.MutablePrimArray s Word32 -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Word16 -> C.MutablePrimArray s Word16 -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize mergeNonContiguous :: forall s. C.MutablePrimArray s Word8 -> C.MutablePrimArray s Word8 -> Int -> Int -> Int -> Int -> Int -> ST s () #-}
 mergeNonContiguous !src !dst !startA !endA !startB !endB !startDst =
   if startB < endB
     then stepA startA startB startDst
@@ -341,7 +407,7 @@ mergeNonContiguous !src !dst !startA !endA !startB !endB !startDst =
       else return ()
   where
   continue :: Int -> Int -> Int -> ST s ()
-  continue ixA ixB ixDst = do
+  continue !ixA !ixB !ixDst = do
     !a <- C.read src ixA
     !b <- C.read src ixB
     if (a :: a) <= b
@@ -375,7 +441,7 @@ mergeNonContiguousTagged :: forall karr varr k v s. (Contiguous karr, Element ka
   -> Int -- end B
   -> Int -- start destination
   -> ST s ()
-{-# INLINE mergeNonContiguousTagged #-}
+{-# inlineable mergeNonContiguousTagged #-}
 mergeNonContiguousTagged !src !dst !srcTags !dstTags !startA !endA !startB !endB !startDst =
   if startB < endB
     then stepA startA startB startDst
@@ -419,12 +485,23 @@ threshold = 16
 thresholdTagged :: Int
 thresholdTagged = 16
 
-insertionSortRange :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
-  => Mutable arr s a
+insertionSortRange :: forall s a. (Prim a, Ord a)
+  => MutablePrimArray s a
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINE insertionSortRange #-}
+{-# inlineable insertionSortRange #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Double -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Int -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Int64 -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Int32 -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Int16 -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Int8 -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Word -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Word64 -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Word32 -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Word16 -> Int -> Int -> ST s () #-}
+{-# specialize insertionSortRange :: forall s. C.MutablePrimArray s Word8 -> Int -> Int -> ST s () #-}
 insertionSortRange !arr !start !end = go start
   where
   go :: Int -> ST s ()
@@ -441,7 +518,17 @@ insertElement :: forall arr s a. (Contiguous arr, Element arr a, Ord a)
   -> Int
   -> Int
   -> ST s ()
-{-# INLINE insertElement #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Double -> Double -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Int -> Int -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Int64 -> Int64 -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Int32 -> Int32 -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Int16 -> Int16 -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Int8 -> Int8 -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Word -> Word -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Word64 -> Word64 -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Word32 -> Word32 -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Word16 -> Word16 -> Int -> Int -> ST s () #-}
+{-# specialize insertElement :: forall s. C.MutablePrimArray s Word8 -> Word8 -> Int -> Int -> ST s () #-}
 insertElement !arr !a !start !end = go end
   where
   go :: Int -> ST s ()
@@ -463,7 +550,7 @@ insertionSortTaggedRange :: forall karr varr s k v. (Contiguous karr, Element ka
   -> Int -- start
   -> Int -- end
   -> ST s ()
-{-# INLINE insertionSortTaggedRange #-}
+{-# inlineable insertionSortTaggedRange #-}
 insertionSortTaggedRange !karr !varr !start !end = go start
   where
   go :: Int -> ST s ()
@@ -483,7 +570,7 @@ insertElementTagged :: forall karr varr s k v. (Contiguous karr, Element karr k,
   -> Int
   -> Int
   -> ST s ()
-{-# INLINE insertElementTagged #-}
+{-# inlineable insertElementTagged #-}
 insertElementTagged !karr !varr !a !v !start !end = go end
   where
   go :: Int -> ST s ()

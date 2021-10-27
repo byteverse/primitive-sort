@@ -36,3 +36,4 @@ TAGS
 
 docs/db/unthreat
 .ghc*
+cabal.project.local
