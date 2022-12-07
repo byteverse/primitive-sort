@@ -1,10 +1,9 @@
 cabal-version: 2.2
 name: primitive-sort
-version: 0.1.1.0
+version: 0.1.2.0
 synopsis: Sort primitive arrays
 description:
   This library provides a stable sorting algorithm for primitive arrays.
-  When extra capabilities are available, the sort is parallelized.
   .
   The algorithm currently uses mergesort on large chunks and switches
   to insertion sort on small chunks. The are also novel improvements

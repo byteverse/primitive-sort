@@ -8,63 +8,58 @@
 
 {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 
+import Test.HUnit.Base ((@?=))
+import Test.QuickCheck as Q
+import Test.SmallCheck.Series (Serial(..))
 import Test.Tasty
 import Test.Tasty.HUnit (testCase)
-import Test.Tasty.SmallCheck as SC
 import Test.Tasty.QuickCheck as QC
-import Test.QuickCheck as Q
-import qualified Test.QuickCheck.Property as QP
-import Type.Reflection (TypeRep,typeRep)
-import qualified Test.SmallCheck.Series as SCS
-import Test.HUnit.Base ((@?=))
+import Test.Tasty.SmallCheck as SC
 
-import Data.List
-import Data.Word
-import Data.Int
-import Data.Primitive (ByteArray,Prim)
-import Data.Proxy (Proxy(..))
-import Control.Monad.ST (ST,runST)
-import Test.SmallCheck.Series (Serial(..),Series)
-import Control.Exception (Exception,toException)
 import Control.Applicative (liftA2)
+import Control.Exception (Exception,toException)
+import Control.Monad.ST (ST,runST)
+import Data.Int
+import Data.List
 import Data.Primitive (ByteArray(..),PrimArray(..),Prim,Array)
+import Data.Proxy (Proxy(..))
+import Data.Word
+import Type.Reflection (TypeRep,typeRep)
 
-import qualified GHC.Exts as E
-import qualified GHC.OldList as L
-import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.Primitive as P
 import qualified Data.Primitive.Sort
--- import qualified Sort.Merge.Int8
--- import qualified Sort.Merge.Word16
--- import qualified Sort.Merge.Word
+import qualified Data.Set as S
+import qualified GHC.Exts as E
+import qualified GHC.OldList as L
+import qualified Test.QuickCheck.Property as QP
 
 main :: IO ()
 main = defaultMain $ testGroup "Sort"
   [ testGroup "Contiguous"
-    [ tests (typeRep :: TypeRep Int8) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Int8 . byteArrayToPrimArray)
-    , tests (typeRep :: TypeRep Word) (primArrayToByteArray . Data.Primitive.Sort.sort @PrimArray @Word . byteArrayToPrimArray)
+    [ tests (typeRep :: TypeRep Int8) (primArrayToByteArray . Data.Primitive.Sort.sort @Int8 . byteArrayToPrimArray)
+    , tests (typeRep :: TypeRep Word) (primArrayToByteArray . Data.Primitive.Sort.sort @Word . byteArrayToPrimArray)
     , SC.testProperty "sortUnique == Set.toList . Set.fromList" $ \(list :: [Int]) ->
-        let actual = E.toList (Data.Primitive.Sort.sortUnique (E.fromList list :: Array Int))
+        let actual = E.toList (Data.Primitive.Sort.sortUnique (E.fromList list :: PrimArray Int))
             expected = S.toList (S.fromList list)
          in if actual == expected
               then Right "unused"
               else Left ("expected " ++ show expected ++ " but got " ++ show actual)
     , testCase "sortTagged" $
         Data.Primitive.Sort.sortTagged
-          (E.fromList [2, 1, 0] :: Array Int)
-          (E.fromList [True, True, False] :: Array Bool)
+          (E.fromList [2, 1, 0] :: PrimArray Int)
+          (E.fromList [1, 1, 0] :: PrimArray Word8)
         @?=
-        (E.fromList [0,1,2], E.fromList [False,True,True] :: Array Bool)
+        (E.fromList [0,1,2], E.fromList [0,1,1] :: PrimArray Word8)
     , testCase "sortUniqueTagged" $
         Data.Primitive.Sort.sortUniqueTagged
           (E.fromList [2, 1, 0] :: Array Int)
-          (E.fromList [True, True, False] :: Array Bool)
+          (E.fromList [1, 1, 0] :: PrimArray Word8)
         @?=
-        (E.fromList [0,1,2], E.fromList [False,True,True] :: Array Bool)
-    , SC.testProperty "sortUniqueTagged == Map.toList . Map.fromList" $ \(list :: [(Int,Bool)]) ->
-        let keys = E.fromList (map fst list) :: Array Int
-            vals = E.fromList (map snd list) :: Array Bool
+        (E.fromList [0,1,2], E.fromList [0,1,1] :: PrimArray Word8)
+    , SC.testProperty "sortUniqueTagged == Map.toList . Map.fromList" $ \(list :: [(Int,Word8)]) ->
+        let keys = E.fromList (map fst list) :: PrimArray Int
+            vals = E.fromList (map snd list) :: PrimArray Word8
             (actualKeys,actualVals) = Data.Primitive.Sort.sortUniqueTagged keys vals
             actual = zip (E.toList actualKeys) (E.toList actualVals)
             expected = M.toList (M.fromList list)
