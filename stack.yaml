@@ -1,5 +1,0 @@
-resolver: lts-11.11
-packages: ['.']
-extra-deps:
-  - 'primitive-0.6.4.0'
-  - 'contiguous-0.1.0.0'
