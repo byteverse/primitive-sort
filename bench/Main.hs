@@ -11,7 +11,7 @@ import Control.Monad.ST (ST,runST)
 import Data.Int
 import Data.Word
 import System.Random (mkStdGen,randoms,Random)
-import GHC.Prim (proxy#, Proxy#)
+import GHC.Exts (proxy#, Proxy#)
 import qualified GHC.OldList as L
 import qualified Data.Primitive as P
 import qualified Data.Primitive.Sort
