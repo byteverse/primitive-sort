@@ -21,14 +21,12 @@ module Data.Primitive.Sort
   , sortUniqueTaggedMutable
   ) where
 
-import Control.Applicative
 import Control.Monad.ST
 import Data.Int
 import Data.Primitive (MutablePrimArray, Prim, PrimArray)
 import Data.Primitive.Contiguous (Contiguous, ContiguousU, Element, Mutable)
 import qualified Data.Primitive.Contiguous as C
 import Data.Word
-import GHC.Int (Int (..))
 import GHC.Exts
 
 -- | Sort an immutable array. Duplicate elements are preserved.
