@@ -15,7 +15,6 @@ import Test.Tasty.HUnit (testCase)
 import Test.Tasty.QuickCheck as QC
 import Test.Tasty.SmallCheck as SC
 
-import Control.Applicative (liftA2)
 import Control.Exception (Exception, toException)
 import Control.Monad.ST (ST, runST)
 import Data.Int
