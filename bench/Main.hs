@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -9,8 +8,6 @@ import Data.Int
 import Data.Primitive (ByteArray (..), Prim, PrimArray (..))
 import qualified Data.Primitive as P
 import qualified Data.Primitive.Sort
-import Data.Word
-import GHC.Exts (Proxy#, proxy#)
 import qualified GHC.Exts as E
 import qualified GHC.OldList as L
 import Gauge.Main
@@ -143,12 +140,12 @@ benchSize arr sz sort =
   bench (showSize sz) (whnf sort arr)
 
 unsorted :: forall a. (Prim a, Random a) => TypeRep a -> Int -> ByteArray
-unsorted typ n =
+unsorted _typ n =
   byteArrayFromList
     (L.take n (randoms (mkStdGen 42) :: [a]))
 
 presorted :: forall a. (Prim a, Num a, Enum a, Bounded a) => TypeRep a -> Int -> ByteArray
-presorted typ n =
+presorted _typ n =
   byteArrayFromList
     (L.take n (iterate (+ 1) (minBound :: a)))
 
@@ -158,7 +155,7 @@ reversed ::
   TypeRep a ->
   Int ->
   ByteArray
-reversed typ n =
+reversed _typ n =
   byteArrayFromList
     (L.take n (iterate (subtract 1) (maxBound :: a)))
 
