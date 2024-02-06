@@ -1,6 +1,6 @@
 cabal-version:   2.2
 name:            primitive-sort
-version:         0.1.2.2
+version:         0.1.2.3
 synopsis:        Sort primitive arrays
 description:
   This library provides a stable sorting algorithm for primitive arrays.
@@ -30,9 +30,9 @@ library
   hs-source-dirs:  src
   exposed-modules: Data.Primitive.Sort
   build-depends:
-    , base        >=0.4.9 && <5
-    , contiguous  >=0.6   && <0.7
-    , primitive   >=0.6.4 && <0.10
+    , base        >=0.4.16 && <5
+    , contiguous  >=0.6    && <0.7
+    , primitive   >=0.6.4  && <0.10
 
 test-suite test
   import:         build-settings
