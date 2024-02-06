@@ -25,9 +25,11 @@ import Control.Monad.ST
 import Data.Int
 import Data.Primitive (MutablePrimArray, Prim, PrimArray)
 import Data.Primitive.Contiguous (Contiguous, ContiguousU, Element, Mutable)
-import qualified Data.Primitive.Contiguous as C
 import Data.Word
 import GHC.Exts
+
+import qualified Control.Applicative as A
+import qualified Data.Primitive.Contiguous as C
 
 -- | Sort an immutable array. Duplicate elements are preserved.
 sort ::
@@ -343,7 +345,7 @@ uniqueTaggedMutableN !len !marr !marrTags =
                   else return dstIx
           !a <- C.read marr dupIx
           !reducedLen <- deduplicate a (dupIx + 1) dupIx
-          liftA2 (,) (C.resize marr reducedLen) (C.resize marrTags reducedLen)
+          A.liftA2 (,) (C.resize marr reducedLen) (C.resize marrTags reducedLen)
     else return (marr, marrTags)
 
 splitMerge ::
