@@ -24,6 +24,7 @@ import Data.Proxy (Proxy (..))
 import Data.Word
 import Type.Reflection (TypeRep, typeRep)
 
+import qualified Control.Applicative as A
 import qualified Data.Map as M
 import qualified Data.Primitive as P
 import qualified Data.Primitive.Sort
@@ -332,7 +333,7 @@ taggedByteArrayFromListN len vs = runST run
             P.writeByteArray tags ix n
             go as (ix + 1)
     go vs 0
-    liftA2 (,) (P.unsafeFreezeByteArray arr) (P.unsafeFreezeByteArray tags)
+    A.liftA2 (,) (P.unsafeFreezeByteArray arr) (P.unsafeFreezeByteArray tags)
 
 eqByteArray :: ByteArray -> ByteArray -> Bool
 eqByteArray paA paB =
@@ -362,7 +363,7 @@ instance (Serial m a, Serial m b) => Serial m (Tag a b) where
   series = fmap tagFromTuple series
 
 instance (Arbitrary a, Arbitrary b) => Arbitrary (Tag a b) where
-  arbitrary = liftA2 Tag arbitrary arbitrary
+  arbitrary = A.liftA2 Tag arbitrary arbitrary
 
 tagFromTuple :: (a, b) -> Tag a b
 tagFromTuple (a, b) = Tag a b
